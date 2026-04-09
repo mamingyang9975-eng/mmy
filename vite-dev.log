@@ -63,3 +63,188 @@
 [2m20:39:04[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
 [2m20:39:19[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
 [2m20:39:27[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m20:45:51[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/rules.ts[22m
+[2m20:46:57[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m20:47:38[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m20:47:38[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/simulation/session.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/simulation/session.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m20:49:03[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m20:49:26[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m20:49:26[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/ui/UiController.ts (resolved id: C:/Users/zaish/Documents/mmy/src/ui/UiController.ts) in C:/Users/zaish/Documents/mmy/src/main.ts. Does the file exist?
+[2m20:49:59[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m20:50:10[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m20:51:33[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/rules.ts[22m
+[2m20:51:51[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/rules.ts[22m
+[2m20:52:07[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/rules.ts[22m
+[2m21:24:13[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m21:24:47[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m21:24:47[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/content/rooms.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/content/rooms.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m21:24:47[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/content/rooms.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/content/rooms.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m21:26:03[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m21:26:05[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m21:26:26[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m21:26:26[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/simulation/session.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/simulation/session.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m21:26:47[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:26:47[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:153:112: ERROR: Unterminated string literal
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:153:112
+[33m  
+  [33mUnterminated string literal[33m
+  153 |      "鍏堥潬杩戝悓浼存寜 E 瀹屾垚浜ゆ帴锛屽啀绌胯繃鍙充晶鍏ュ彛杩涘叆璁炬柦銆?;
+  154 |    private preludeCompanionSpoken = false;
+  155 |    private preludeGateUnlocked = false;
+      |                           ^
+  156 |    private preludeCompanionPrompt: Phaser.GameObjects.Text | null = null;
+  157 |    private preludeGateShape: Phaser.GameObjects.Rectangle | null = null;
+  [39m
+[2m21:26:47[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:153:112: ERROR: Unterminated string literal[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:153:112
+[33m  
+  [33mUnterminated string literal[33m
+  153 |      "鍏堥潬杩戝悓浼存寜 E 瀹屾垚浜ゆ帴锛屽啀绌胯繃鍙充晶鍏ュ彛杩涘叆璁炬柦銆?;
+  154 |    private preludeCompanionSpoken = false;
+  155 |    private preludeGateUnlocked = false;
+      |                           ^
+  156 |    private preludeCompanionPrompt: Phaser.GameObjects.Text | null = null;
+  157 |    private preludeGateShape: Phaser.GameObjects.Rectangle | null = null;
+  [39m
+      at failureErrorWithLog (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1748:15)
+      at C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1017:50
+      at responseCallbacks.<computed> (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:884:9)
+      at handleIncomingPacket (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:939:12)
+      at Socket.readFromStdout (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:862:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:563:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+      at Readable.push (node:internal/streams/readable:394:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+[2m21:27:39[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:27:39[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+[2m21:27:39[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+      at failureErrorWithLog (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1748:15)
+      at C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1017:50
+      at responseCallbacks.<computed> (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:884:9)
+      at handleIncomingPacket (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:939:12)
+      at Socket.readFromStdout (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:862:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:563:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+      at Readable.push (node:internal/streams/readable:394:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+[2m21:28:03[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m21:28:03[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+[2m21:28:03[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+      at failureErrorWithLog (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1748:15)
+      at C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1017:50
+      at responseCallbacks.<computed> (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:884:9)
+      at handleIncomingPacket (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:939:12)
+      at Socket.readFromStdout (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:862:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:563:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+      at Readable.push (node:internal/streams/readable:394:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+[2m21:28:11[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/rules.ts[22m
+[2m21:28:11[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+[2m21:28:11[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 1 error:
+C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts:1394:86: ERROR: Unterminated string literal[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mC:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts[39m:1394:86
+[33m  
+  [33mUnterminated string literal[33m
+  1395 |            : "鎸?E 浜ゆ帴",
+  1396 |        );
+  1397 |        this.preludeCompanionPrompt.setColor(
+       |                 ^
+  1398 |          this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+  1399 |        );
+  [39m
+      at failureErrorWithLog (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1748:15)
+      at C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:1017:50
+      at responseCallbacks.<computed> (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:884:9)
+      at handleIncomingPacket (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:939:12)
+      at Socket.readFromStdout (C:\Users\zaish\Documents\mmy\node_modules\esbuild\lib\main.js:862:7)
+      at Socket.emit (node:events:508:28)
+      at addChunk (node:internal/streams/readable:563:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+      at Readable.push (node:internal/streams/readable:394:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+[2m21:28:19[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:28:59[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:05[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:12[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:17[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:26[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:35[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:41[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:29:52[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:31:27[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:32:27[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m21:34:12[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m21:34:12[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/content/rooms.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/content/rooms.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m21:34:12[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to load url /src/game/content/rooms.ts (resolved id: C:/Users/zaish/Documents/mmy/src/game/content/rooms.ts) in C:/Users/zaish/Documents/mmy/src/phaser/scenes/GameScene.ts. Does the file exist?
+[2m21:35:26[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m21:44:48[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m21:45:20[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
