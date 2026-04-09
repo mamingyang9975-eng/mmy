@@ -5,12 +5,12 @@ const SCANNER_VISION_RADIUS = 48;
 export const ROOMS: RoomDefinition[] = [
   {
     id: "room-1",
-    name: "接入区 / 初始校验",
-    shortName: "房间 1",
-    hint: "先按 E 激活引导面板，再站到感应区里按住 Space 停留两秒示意；之后在巡逻机范围内保持慢行。",
+    name: "Access / Initial Read",
+    shortName: "Room 1",
+    hint: "Activate the guide panel, hold Space in the signal zone, then move slowly while the scanner can see you.",
     signage: [
-      "本设施优先处理稳定且可确认的接入行为。",
-      "访客接入前，请先启用引导面板。",
+      "Stable and legible behavior is processed first.",
+      "Complete guided access before approaching the visitor door.",
     ],
     playerSpawn: { x: 48, y: 170 },
     wallRects: [
@@ -20,7 +20,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-a",
-        label: "巡逻机",
+        label: "Scanner",
         position: { x: 126, y: 118 },
         rule: {
           id: "scanner-a",
@@ -38,7 +38,7 @@ export const ROOMS: RoomDefinition[] = [
     doors: [
       {
         id: "north-door",
-        label: "访客门禁",
+        label: "Visitor Door",
         rect: { x: 192, y: 88, width: 24, height: 40 },
         rule: {
           id: "north-door",
@@ -51,8 +51,8 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "guide-console-a",
         rect: { x: 108, y: 146, width: 18, height: 18 },
-        label: "引导面板",
-        prompt: "按 E 激活引导面板",
+        label: "Guide Panel",
+        prompt: "Press E to activate guidance",
         action: "primeGuidance",
       },
     ],
@@ -68,10 +68,13 @@ export const ROOMS: RoomDefinition[] = [
   },
   {
     id: "room-2",
-    name: "服务层 / 住户确认",
-    shortName: "房间 2",
-    hint: "把电池放进侧托盘后，等居民走到门侧等候点；确认完成后，这道门才会放行维修通道。",
-    signage: ["主电槽锁定。待检件请置于侧托盘。", "住户服务请求需在门侧完成确认。"],
+    name: "Service / Resident Check",
+    shortName: "Room 2",
+    hint: "Place a battery in the service tray, then wait for the resident to confirm service at the door.",
+    signage: [
+      "Main power slot locked. Leave service parts in the side tray.",
+      "Resident service requests must be confirmed at the door.",
+    ],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
       { x: 214, y: 0, width: 22, height: 86 },
@@ -80,7 +83,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-b",
-        label: "巡逻机",
+        label: "Scanner",
         position: { x: 140, y: 106 },
         rule: {
           id: "scanner-b",
@@ -98,7 +101,7 @@ export const ROOMS: RoomDefinition[] = [
     residents: [
       {
         id: "resident-b",
-        label: "居民",
+        label: "Resident",
         position: { x: 168, y: 168 },
         servicePoint: { x: 188, y: 150 },
         speed: 22,
@@ -107,7 +110,7 @@ export const ROOMS: RoomDefinition[] = [
     doors: [
       {
         id: "service-door",
-        label: "维修门禁",
+        label: "Service Door",
         rect: { x: 214, y: 86, width: 22, height: 38 },
         rule: {
           id: "service-door",
@@ -121,22 +124,22 @@ export const ROOMS: RoomDefinition[] = [
     ],
     terminal: {
       id: "terminal-b",
-      label: "服务终端",
+      label: "Service Terminal",
       body: { x: 32, y: 44, width: 90, height: 86 },
       slots: [
         {
           id: "power-slot",
-          label: "主电槽",
+          label: "Main Power",
           rect: { x: 66, y: 58, width: 18, height: 18 },
         },
         {
           id: "service-tray",
-          label: "侧托盘",
+          label: "Service Tray",
           rect: { x: 40, y: 102, width: 18, height: 18 },
         },
         {
           id: "fault-slot",
-          label: "异常槽",
+          label: "Fault Slot",
           rect: { x: 94, y: 102, width: 18, height: 18 },
         },
       ],
@@ -157,13 +160,13 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "battery-a",
         itemType: "battery",
-        label: "电池 A",
+        label: "Battery A",
         position: { x: 72, y: 164 },
       },
       {
         id: "battery-b",
         itemType: "battery",
-        label: "电池 B",
+        label: "Battery B",
         position: { x: 104, y: 186 },
       },
     ],
@@ -172,42 +175,51 @@ export const ROOMS: RoomDefinition[] = [
   },
   {
     id: "room-3",
-    name: "归档层 / 护送切换",
-    shortName: "房间 3",
-    hint: "先借维修身份穿过第一道门，再站到中段示意区里按住 Space 停留两秒，切回访客流后慢行通过出口。",
-    signage: ["维修流量默认护送。离线访客请重新示意。"],
+    name: "Archive / Escort Cost",
+    shortName: "Room 3",
+    hint: "Use maintenance access to cross the first gate, then carry the spare battery to the inspection pad to pull the escort off the route.",
+    signage: [
+      "Maintenance traffic is escorted by default.",
+      "Deliver spare parts to the inspection pad before advancing.",
+    ],
+    dimensions: {
+      width: 512,
+      height: 216,
+    },
     playerSpawn: { x: 44, y: 170 },
     wallRects: [
-      { x: 144, y: 0, width: 20, height: 86 },
-      { x: 144, y: 126, width: 20, height: 90 },
-      { x: 286, y: 0, width: 20, height: 86 },
-      { x: 286, y: 126, width: 20, height: 90 },
+      { x: 154, y: 0, width: 22, height: 82 },
+      { x: 154, y: 126, width: 22, height: 90 },
+      { x: 406, y: 0, width: 22, height: 82 },
+      { x: 406, y: 126, width: 22, height: 90 },
+      { x: 252, y: 54, width: 48, height: 14 },
+      { x: 250, y: 148, width: 52, height: 14 },
     ],
     drones: [
       {
         id: "scanner-c",
-        label: "巡逻机",
-        position: { x: 74, y: 106 },
+        label: "Scanner",
+        position: { x: 250, y: 104 },
         rule: {
           id: "scanner-c",
           kind: "scanner",
-          visionRadius: SCANNER_VISION_RADIUS,
+          visionRadius: 52,
         },
         patrol: {
-          speed: 26,
-          radius: 26,
-          lingerMs: 1500,
+          speed: 24,
+          radius: 34,
+          lingerMs: 1400,
         },
       },
       {
         id: "escort-c",
-        label: "护送机",
-        position: { x: 214, y: 106 },
+        label: "Escort",
+        position: { x: 220, y: 104 },
         rule: {
           id: "escort-c",
           kind: "escort",
-          visionRadius: 120,
-          escortSpawn: { x: 214, y: 106 },
+          visionRadius: 124,
+          escortSpawn: { x: 220, y: 104 },
         },
       },
     ],
@@ -215,8 +227,8 @@ export const ROOMS: RoomDefinition[] = [
     doors: [
       {
         id: "maintenance-gate",
-        label: "维修检查门",
-        rect: { x: 144, y: 86, width: 20, height: 40 },
+        label: "Maintenance Gate",
+        rect: { x: 154, y: 82, width: 22, height: 44 },
         rule: {
           id: "maintenance-gate",
           accepts: ["maintenanceCandidate"],
@@ -225,12 +237,13 @@ export const ROOMS: RoomDefinition[] = [
         },
       },
       {
-        id: "archive-exit",
-        label: "访客出口",
-        rect: { x: 286, y: 86, width: 20, height: 40 },
+        id: "service-exit",
+        label: "Work Exit",
+        rect: { x: 406, y: 82, width: 22, height: 44 },
         rule: {
-          id: "archive-exit",
-          accepts: ["guidedVisitor"],
+          id: "service-exit",
+          accepts: ["maintenanceCandidate"],
+          requiresTerminalMode: ["maintenanceRequest"],
           deniesEscort: true,
         },
         exitToNextRoom: true,
@@ -238,18 +251,18 @@ export const ROOMS: RoomDefinition[] = [
     ],
     terminal: {
       id: "terminal-c",
-      label: "维保中枢",
-      body: { x: 18, y: 42, width: 84, height: 88 },
+      label: "Maintenance Desk",
+      body: { x: 26, y: 42, width: 92, height: 88 },
       slots: [
         {
           id: "service-tray",
-          label: "侧托盘",
-          rect: { x: 24, y: 106, width: 18, height: 18 },
+          label: "Service Tray",
+          rect: { x: 34, y: 104, width: 18, height: 18 },
         },
         {
           id: "inspection-pad",
-          label: "检修台",
-          rect: { x: 210, y: 152, width: 20, height: 20 },
+          label: "Inspection Pad",
+          rect: { x: 314, y: 168, width: 20, height: 20 },
         },
       ],
       recipes: [
@@ -264,27 +277,195 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "battery-main",
         itemType: "battery",
-        label: "主电池",
-        position: { x: 72, y: 160 },
+        label: "Main Battery",
+        position: { x: 76, y: 162 },
       },
       {
         id: "battery-spare",
         itemType: "battery",
-        label: "备用电池",
-        position: { x: 190, y: 170 },
+        label: "Spare Battery",
+        position: { x: 110, y: 182 },
+      },
+    ],
+    signalZones: [],
+    guidePaths: [
+      {
+        id: "maint-route-c",
+        color: "amber",
+        activeWhen: "maintenance",
+        tolerance: 14,
+        points: [
+          { x: 92, y: 150 },
+          { x: 138, y: 136 },
+          { x: 198, y: 118 },
+          { x: 278, y: 118 },
+          { x: 350, y: 118 },
+          { x: 396, y: 104 },
+        ],
+      },
+    ],
+    triggers: [
+      {
+        id: "escort-trigger",
+        rect: { x: 188, y: 58, width: 34, height: 94 },
+        action: "spawnEscort",
+      },
+    ],
+  },
+  {
+    id: "room-4",
+    name: "Observation / Identity Switch",
+    shortName: "Room 4",
+    hint: "Enter as maintenance, use the broadcast console to shed the local work order, then switch yourself back into visitor flow.",
+    signage: [
+      "Maintenance tickets keep an escort attached.",
+      "Visitor exit accepts guided visitors only.",
+    ],
+    dimensions: {
+      width: 640,
+      height: 216,
+    },
+    playerSpawn: { x: 44, y: 170 },
+    wallRects: [
+      { x: 160, y: 0, width: 22, height: 82 },
+      { x: 160, y: 126, width: 22, height: 90 },
+      { x: 552, y: 0, width: 22, height: 82 },
+      { x: 552, y: 126, width: 22, height: 90 },
+      { x: 294, y: 52, width: 52, height: 14 },
+      { x: 294, y: 148, width: 54, height: 14 },
+    ],
+    drones: [
+      {
+        id: "scanner-d",
+        label: "Scanner",
+        position: { x: 256, y: 104 },
+        rule: {
+          id: "scanner-d",
+          kind: "scanner",
+          visionRadius: 52,
+        },
+        patrol: {
+          speed: 24,
+          radius: 36,
+          lingerMs: 1400,
+        },
+      },
+      {
+        id: "escort-d",
+        label: "Escort",
+        position: { x: 222, y: 104 },
+        rule: {
+          id: "escort-d",
+          kind: "escort",
+          visionRadius: 126,
+          escortSpawn: { x: 222, y: 104 },
+        },
+      },
+    ],
+    residents: [],
+    doors: [
+      {
+        id: "maintenance-gate",
+        label: "Maintenance Gate",
+        rect: { x: 160, y: 82, width: 22, height: 44 },
+        rule: {
+          id: "maintenance-gate",
+          accepts: ["maintenanceCandidate"],
+          requiresTerminalMode: ["maintenanceRequest"],
+          requiresSlowInDroneRange: true,
+        },
+      },
+      {
+        id: "archive-exit",
+        label: "Visitor Exit",
+        rect: { x: 552, y: 82, width: 22, height: 44 },
+        rule: {
+          id: "archive-exit",
+          accepts: ["guidedVisitor"],
+          deniesEscort: true,
+        },
+        exitToNextRoom: true,
+      },
+    ],
+    terminal: {
+      id: "terminal-d",
+      label: "Work Desk",
+      body: { x: 26, y: 42, width: 92, height: 88 },
+      slots: [
+        {
+          id: "service-tray",
+          label: "Service Tray",
+          rect: { x: 34, y: 104, width: 18, height: 18 },
+        },
+        {
+          id: "inspection-pad",
+          label: "Review Pad",
+          rect: { x: 330, y: 168, width: 20, height: 20 },
+        },
+      ],
+      recipes: [
+        {
+          slotId: "service-tray",
+          resultingMode: "maintenanceRequest",
+          acceptsItemType: "battery",
+        },
+      ],
+    },
+    consoles: [
+      {
+        id: "escort-reroute-console",
+        rect: { x: 360, y: 46, width: 18, height: 18 },
+        label: "Broadcast",
+        prompt: "Press E to reroute escort",
+        action: "rerouteEscort",
+      },
+    ],
+    items: [
+      {
+        id: "battery-main",
+        itemType: "battery",
+        label: "Work Battery",
+        position: { x: 78, y: 164 },
       },
     ],
     signalZones: [
       {
         id: "archive-signal",
-        rect: { x: 234, y: 150, width: 36, height: 28 },
+        rect: { x: 470, y: 148, width: 42, height: 30 },
       },
     ],
-    guidePaths: [],
+    guidePaths: [
+      {
+        id: "maint-route-d",
+        color: "amber",
+        activeWhen: "maintenance",
+        tolerance: 14,
+        points: [
+          { x: 92, y: 150 },
+          { x: 138, y: 136 },
+          { x: 210, y: 118 },
+          { x: 292, y: 118 },
+          { x: 356, y: 118 },
+        ],
+      },
+      {
+        id: "visitor-route-d",
+        color: "blue",
+        activeWhen: "guided",
+        tolerance: 14,
+        points: [
+          { x: 472, y: 164 },
+          { x: 506, y: 164 },
+          { x: 530, y: 138 },
+          { x: 530, y: 104 },
+          { x: 548, y: 104 },
+        ],
+      },
+    ],
     triggers: [
       {
         id: "escort-trigger",
-        rect: { x: 168, y: 64, width: 28, height: 84 },
+        rect: { x: 192, y: 58, width: 34, height: 94 },
         action: "spawnEscort",
       },
     ],

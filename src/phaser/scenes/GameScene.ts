@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+﻿import Phaser from "phaser";
 import { ROOMS } from "../../game/content/rooms";
 import {
   distance,
@@ -21,17 +21,19 @@ import type {
   DoorRule,
   DroneDefinition,
   DroneState,
+  InterpretationScores,
   ItemSlot,
   Rect,
   ResidentDefinition,
   RoomDefinition,
+  RoomRuntime,
   TerminalMode,
 } from "../../game/simulation/types";
 import { getUiController } from "../../ui/controllerStore";
 
-const ROOM_WIDTH = 384;
+const DEFAULT_ROOM_WIDTH = 384;
 const PRELUDE_WIDTH = 640;
-const ROOM_HEIGHT = 216;
+const DEFAULT_ROOM_HEIGHT = 216;
 const CAMERA_ZOOM = 3;
 const INTERACT_RANGE = 20;
 const EXIT_GRACE_MS = 220;
@@ -149,7 +151,7 @@ export class GameScene extends Phaser.Scene {
   private phase: ScenePhase = "prelude";
   private preludeActive = false;
   private preludeHint =
-    "先靠近同伴按 E 完成交接，再穿过右侧入口进入设施。";
+    "先靠近同伴按 E 交接，再从右侧外门进去。";
   private preludeCompanionSpoken = false;
   private preludeGateUnlocked = false;
   private preludeCompanionPrompt: Phaser.GameObjects.Text | null = null;
@@ -165,9 +167,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.physics.world.setBounds(0, 0, PRELUDE_WIDTH, ROOM_HEIGHT);
+    this.physics.world.setBounds(0, 0, PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT);
     this.cameras.main.setBackgroundColor(0x0f1319);
-    this.cameras.main.setBounds(0, 0, PRELUDE_WIDTH, ROOM_HEIGHT);
+    this.cameras.main.setBounds(0, 0, PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     this.cameras.main.roundPixels = true;
 
@@ -238,7 +240,7 @@ export class GameScene extends Phaser.Scene {
       .filter((drone) => this.isDroneVisible(drone))
       .map((drone) => drone.id);
     const isInSignalZone = activeSignalZone !== undefined;
-    const isOnMaintenancePath = this.getActiveGuidePaths(room, runtime.terminalMode)
+    const isOnMaintenancePath = this.getActiveGuidePaths(room, runtime)
       .some((path) => distanceToPolyline(playerPos, path.points) <= path.tolerance);
     const signalEnabled =
       !room.signalRequiresActivation || runtime.guideFieldPrimed;
@@ -548,15 +550,15 @@ export class GameScene extends Phaser.Scene {
     this.preludeCompanionSpoken = false;
     this.preludeGateUnlocked = false;
     this.preludeHint =
-      "先靠近同伴按 E 完成交接，再穿过右侧入口进入设施。";
+      "先靠近同伴按 E 交接，再从右侧外门进去。";
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
 
-    this.setWorldFrame(PRELUDE_WIDTH, ROOM_HEIGHT, "prelude");
+    this.setWorldFrame(PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT, "prelude");
     this.player.setPosition(64, 166);
     this.player.setVelocity(0, 0);
-    this.roomTitle.setText("设施外 / 入口坡道");
+    this.roomTitle.setText("璁炬柦澶?/ 鍏ュ彛鍧￠亾");
 
     const yard = this.add.graphics();
     yard.setDepth(2);
@@ -586,7 +588,7 @@ export class GameScene extends Phaser.Scene {
     this.preludeGateShape = gate;
     this.preludeGateBody = gateBody;
     this.preludeColliders.push(this.physics.add.collider(this.player, gate));
-    const gateLabel = this.add.text(486, 68, "外部门禁", {
+    const gateLabel = this.add.text(486, 68, "澶栭儴闂ㄧ", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "9px",
       fontStyle: "600",
@@ -606,7 +608,7 @@ export class GameScene extends Phaser.Scene {
     companionBadge.setDepth(11.05);
     const companionMarker = this.add.circle(132, 149, 3, 0xf6d08e, 0.92);
     companionMarker.setDepth(11.1);
-    const companionLabel = this.add.text(116, 178, "同伴", {
+    const companionLabel = this.add.text(116, 178, "鍚屼即", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "8px",
       color: "#f4d7b2",
@@ -625,7 +627,7 @@ export class GameScene extends Phaser.Scene {
     this.decorateLabel(companionPrompt);
     this.preludeCompanionPrompt = companionPrompt;
 
-    const brief = this.add.text(42, 38, "“我在外面接应。你进去以后，顺着它的流程走，别和门口硬碰。”", {
+    const brief = this.add.text(42, 38, "“阿述就在里面。你先混进去，别一上来就露怯。”", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "10px",
       color: "#b8c8d8",
@@ -635,9 +637,9 @@ export class GameScene extends Phaser.Scene {
     brief.setDepth(4);
     this.decorateLabel(brief);
 
-    const facilitySign = this.add.text(472, 42, "低歧义接入设施", {
+    const facilitySign = this.add.text(468, 50, "低歧义设施", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-      fontSize: "10px",
+      fontSize: "12px",
       fontStyle: "600",
       color: "#d6e4f1",
       resolution: CAMERA_ZOOM,
@@ -1005,7 +1007,8 @@ export class GameScene extends Phaser.Scene {
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
-    this.setWorldFrame(ROOM_WIDTH, ROOM_HEIGHT, "facility");
+    const dimensions = this.getRoomDimensions(snapshot.room);
+    this.setWorldFrame(dimensions.width, dimensions.height, "facility");
     this.player.setPosition(snapshot.room.playerSpawn.x, snapshot.room.playerSpawn.y);
     this.player.setVelocity(0, 0);
     this.roomTitle.setText(snapshot.room.name);
@@ -1373,7 +1376,7 @@ export class GameScene extends Phaser.Scene {
     this.preludeCompanionSpoken = true;
     this.preludeGateUnlocked = true;
     this.preludeHint =
-      "外部门禁已经被同伴远程放行。沿右侧坡道进入设施，潜入会在门后正式开始。";
+      "外门开了。从右边进去，先别慌，像来办事的。";
     this.playKeyboardClick("confirm");
   }
 
@@ -1730,7 +1733,9 @@ export class GameScene extends Phaser.Scene {
       const active =
         (path.activeWhen === "maintenance" &&
           runtime.terminalMode === "maintenanceRequest") ||
-        (path.activeWhen === "guided" && runtime.guideMemory.remainingMs > 0);
+        (path.activeWhen === "guided" &&
+          (runtime.guideMemory.remainingMs > 0 ||
+            runtime.interpretation === "guidedVisitor"));
       const color =
         path.color === "amber"
           ? active
@@ -1780,6 +1785,7 @@ export class GameScene extends Phaser.Scene {
       this.ui.renderHud({
         roomName: "设施外",
         interpretation: "未接入",
+        tendency: "尚未被读取",
         terminalMode: "无",
         carrying: "空手",
         hint: this.preludeHint,
@@ -1791,22 +1797,36 @@ export class GameScene extends Phaser.Scene {
     this.ui.renderHud({
       roomName: snapshot.room.shortName,
       interpretation: this.describeInterpretation(snapshot.runtime.interpretation),
+      tendency: this.describeTendency(snapshot.runtime.interpretationScores),
       terminalMode: this.describeTerminal(snapshot.runtime.terminalMode),
-      carrying: this.carriedItemId ? "电池" : "空手",
+      carrying: this.carriedItemId ? "鐢垫睜" : "绌烘墜",
       hint: snapshot.runtime.message ?? snapshot.room.hint,
     });
   }
 
   private getActiveGuidePaths(
     room: RoomDefinition,
-    terminalMode: TerminalMode,
+    runtime: RoomRuntime,
   ) {
     return room.guidePaths.filter((path) => {
       return (
-        path.activeWhen === "maintenance" &&
-        terminalMode === "maintenanceRequest"
+        (path.activeWhen === "maintenance" &&
+          runtime.terminalMode === "maintenanceRequest") ||
+        (path.activeWhen === "guided" &&
+          (runtime.guideMemory.remainingMs > 0 ||
+            runtime.interpretation === "guidedVisitor"))
       );
     });
+  }
+
+  private getRoomDimensions(room: RoomDefinition): {
+    width: number;
+    height: number;
+  } {
+    return {
+      width: room.dimensions?.width ?? DEFAULT_ROOM_WIDTH,
+      height: room.dimensions?.height ?? DEFAULT_ROOM_HEIGHT,
+    };
   }
 
   private getDoorApproachState(): {
@@ -1873,7 +1893,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateEscortMotion(delta: number): void {
-    const escort = this.droneObjects.get("escort-c");
+    const escort = Array.from(this.droneObjects.values()).find(
+      (entry) => entry.def.rule.kind === "escort",
+    );
     if (!escort || !escort.sprite.visible) {
       return;
     }
@@ -1881,7 +1903,7 @@ export class GameScene extends Phaser.Scene {
     const runtime = this.session.getSnapshot().runtime;
     const target = runtime.escortReleased
       ? this.getEscortWanderPosition(escort)
-      : runtime.escortDistractedMs > 0
+      : runtime.escortReroutedMs > 0 || runtime.escortDistractedMs > 0
         ? rectCenter(
             this.slotObjects.get("inspection-pad")?.slot.rect ?? {
               x: 214,
@@ -2072,22 +2094,33 @@ export class GameScene extends Phaser.Scene {
 
   private describeInterpretation(value: DoorRule["accepts"][number] | "intruder"): string {
     if (value === "guidedVisitor") {
-      return "访客通道";
+      return "璁垮閫氶亾";
     }
     if (value === "maintenanceCandidate") {
-      return "维修通道";
+      return "缁翠慨閫氶亾";
     }
     return "未授权";
   }
 
   private describeTerminal(value: TerminalMode): string {
     if (value === "maintenanceRequest") {
-      return "维修请求";
+      return "缁翠慨璇锋眰";
     }
     if (value === "faultReport") {
-      return "故障上报";
+      return "鏁呴殰涓婃姤";
     }
     return "无";
+  }
+
+  private describeTendency(scores: InterpretationScores): string {
+    const pairs = [
+      ["缁翠慨", scores.maintenanceCandidate],
+      ["璁垮", scores.guidedVisitor],
+      ["鍏ヤ镜", scores.intruder],
+    ] as const;
+    const [primary, secondary] = [...pairs].sort((left, right) => right[1] - left[1]);
+
+    return `${primary[0]} ${primary[1]} / ${secondary[0]} ${secondary[1]}`;
   }
 
   private playKeyboardClick(
@@ -2185,3 +2218,5 @@ export class GameScene extends Phaser.Scene {
     return context;
   }
 }
+
+

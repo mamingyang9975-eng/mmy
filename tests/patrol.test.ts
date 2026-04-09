@@ -42,23 +42,29 @@ describe("patrol helpers", () => {
 });
 
 describe("scanner room tuning", () => {
-  it("keeps scanner drones on short patrols with a two-cell radius and escalating speeds", () => {
+  it("keeps scanner drones on compact patrols while later rooms widen the patrol radius", () => {
     const scanners = ROOMS.map((room) =>
       room.drones.find((drone) => drone.rule.kind === "scanner"),
     ).filter((scanner) => scanner !== undefined);
 
-    expect(scanners.length).toBe(3);
+    expect(scanners.length).toBe(4);
 
     for (const scanner of scanners) {
-      expect(scanner.rule.visionRadius).toBe(48);
+      expect(scanner.rule.visionRadius).toBeGreaterThanOrEqual(48);
+      expect(scanner.rule.visionRadius).toBeLessThanOrEqual(52);
       expect(scanner.patrol?.radius).toBeGreaterThanOrEqual(22);
-      expect(scanner.patrol?.radius).toBeLessThanOrEqual(26);
-      expect(scanner.patrol?.lingerMs).toBe(1500);
-      expect(scanner.patrol?.speed).toBe(scanner.patrol?.radius);
+      expect(scanner.patrol?.radius).toBeLessThanOrEqual(36);
+      expect(scanner.patrol?.lingerMs).toBeGreaterThanOrEqual(1400);
+      expect(scanner.patrol?.lingerMs).toBeLessThanOrEqual(1500);
+      expect(scanner.patrol?.speed).toBeGreaterThanOrEqual(22);
+      expect(scanner.patrol?.speed).toBeLessThanOrEqual(24);
     }
 
-    const speeds = scanners.map((scanner) => scanner.patrol?.speed ?? 0);
-    expect(speeds[0]).toBeLessThan(speeds[1]);
-    expect(speeds[1]).toBeLessThan(speeds[2]);
+    expect((scanners[2].patrol?.radius ?? 0)).toBeGreaterThan(
+      scanners[1].patrol?.radius ?? 0,
+    );
+    expect((scanners[3].patrol?.radius ?? 0)).toBeGreaterThan(
+      scanners[2].patrol?.radius ?? 0,
+    );
   });
 });

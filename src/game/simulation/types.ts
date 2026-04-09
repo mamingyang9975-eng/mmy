@@ -3,6 +3,12 @@ export type InterpretationTag =
   | "guidedVisitor"
   | "maintenanceCandidate";
 
+export interface InterpretationScores {
+  intruder: number;
+  guidedVisitor: number;
+  maintenanceCandidate: number;
+}
+
 export type MovementMode = "normal" | "slow";
 
 export type TerminalMode = "none" | "maintenanceRequest" | "faultReport";
@@ -17,6 +23,11 @@ export interface Vec2 {
 export interface Rect {
   x: number;
   y: number;
+  width: number;
+  height: number;
+}
+
+export interface RoomDimensions {
   width: number;
   height: number;
 }
@@ -49,7 +60,7 @@ export interface ConsoleDefinition {
   rect: Rect;
   label: string;
   prompt: string;
-  action: "primeGuidance";
+  action: "primeGuidance" | "rerouteEscort";
 }
 
 export interface ItemSpawn {
@@ -74,6 +85,8 @@ export interface TerminalRecipe {
 export interface DoorRule {
   id: string;
   accepts: InterpretationTag[];
+  minScores?: Partial<InterpretationScores>;
+  maxScores?: Partial<InterpretationScores>;
   requiresTerminalMode?: TerminalMode[];
   deniesEscort?: boolean;
   requiresSlowMovement?: boolean;
@@ -132,6 +145,7 @@ export interface RoomDefinition {
   shortName: string;
   hint: string;
   signage: string[];
+  dimensions?: RoomDimensions;
   wallRects: Rect[];
   playerSpawn: Vec2;
   drones: DroneDefinition[];
@@ -161,6 +175,7 @@ export interface PlayerIntentSnapshot {
 
 export interface DoorContext {
   interpretation: InterpretationTag;
+  scores: InterpretationScores;
   terminalMode: TerminalMode;
   escortActive: boolean;
   residentServiceActive?: boolean;
@@ -172,6 +187,7 @@ export interface DoorContext {
 
 export interface DroneContext {
   interpretation: InterpretationTag;
+  scores: InterpretationScores;
   movementMode: MovementMode;
   speed: number;
   playerVisible: boolean;
@@ -179,6 +195,7 @@ export interface DroneContext {
   terminalMode: TerminalMode;
   escortActive: boolean;
   escortDistracted: boolean;
+  escortRerouted: boolean;
 }
 
 export interface GuideMemory {
@@ -194,12 +211,14 @@ export interface ResidentRuntime {
 
 export interface InterpretationResult {
   tag: InterpretationTag;
+  scores: InterpretationScores;
   guideMemory: GuideMemory;
 }
 
 export interface RoomRuntime {
   terminalMode: TerminalMode;
   interpretation: InterpretationTag;
+  interpretationScores: InterpretationScores;
   guideMemory: GuideMemory;
   guideFieldPrimed: boolean;
   visitorFlowUnlocked: boolean;
@@ -208,6 +227,7 @@ export interface RoomRuntime {
   escortUnlocked: boolean;
   escortReleased: boolean;
   escortDistractedMs: number;
+  escortReroutedMs: number;
   alertWarningMs: number;
   alertCountdownMs: number | null;
   triggeredIds: string[];

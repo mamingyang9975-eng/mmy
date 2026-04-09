@@ -6,6 +6,8 @@ import type {
   DroneState,
   GuideMemory,
   InterpretationResult,
+  InterpretationScores,
+  InterpretationTag,
   ItemSpawn,
   PlayerIntentSnapshot,
   TerminalMode,
@@ -21,50 +23,108 @@ export function createGuideMemory(): GuideMemory {
   return { remainingMs: 0 };
 }
 
+export function createInterpretationScores(): InterpretationScores {
+  return {
+    intruder: 0,
+    guidedVisitor: 0,
+    maintenanceCandidate: 0,
+  };
+}
+
+export function resolveInterpretationTag(
+  scores: InterpretationScores,
+): InterpretationTag {
+  if (
+    scores.maintenanceCandidate > scores.guidedVisitor &&
+    scores.maintenanceCandidate >= scores.intruder
+  ) {
+    return "maintenanceCandidate";
+  }
+
+  if (scores.guidedVisitor > scores.intruder) {
+    return "guidedVisitor";
+  }
+
+  return "intruder";
+}
+
 export function advanceInterpretation(
   snapshot: PlayerIntentSnapshot,
   previous: GuideMemory,
   deltaMs: number,
 ): InterpretationResult {
-  if (snapshot.terminalMode === "maintenanceRequest") {
-    return {
-      tag: "maintenanceCandidate",
-      guideMemory: {
-        remainingMs: Math.max(0, previous.remainingMs - deltaMs),
-      },
-    };
-  }
-
   let remainingMs = Math.max(0, previous.remainingMs - deltaMs);
-
-  if (
+  const scores = createInterpretationScores();
+  const justCompletedSignal =
     snapshot.isInSignalZone &&
     snapshot.isIndicating &&
-    snapshot.signalEnabled
-  ) {
+    snapshot.signalEnabled;
+
+  if (justCompletedSignal) {
     remainingMs = GUIDE_MEMORY_MS;
   }
 
-  if (remainingMs > 0) {
-    return {
-      tag: "guidedVisitor",
-      guideMemory: { remainingMs },
-    };
+  if (snapshot.movementMode === "slow") {
+    scores.guidedVisitor += 1;
+  } else {
+    scores.intruder += 1;
+  }
+
+  if (snapshot.speed >= FAST_SPEED_THRESHOLD) {
+    scores.intruder += 4;
+  } else if (snapshot.speed > 0) {
+    scores.guidedVisitor += 1;
+  }
+
+  if (!snapshot.isOnTrustedRoute && snapshot.movementMode === "normal") {
+    scores.intruder += 2;
   }
 
   if (
     snapshot.isInSignalZone &&
     snapshot.isIndicating &&
-    snapshot.signalEnabled
+    !snapshot.signalEnabled
   ) {
-    return {
-      tag: "guidedVisitor",
-      guideMemory: { remainingMs },
-    };
+    scores.intruder += 2;
   }
 
+  if (snapshot.isInGuideRange) {
+    scores.guidedVisitor += 2;
+  }
+
+  if (snapshot.isInSignalZone && snapshot.signalEnabled) {
+    scores.guidedVisitor += 1;
+  }
+
+  if (justCompletedSignal) {
+    scores.guidedVisitor += 5;
+  }
+
+  if (remainingMs > 0) {
+    scores.guidedVisitor += 4;
+  }
+
+  if (snapshot.carryingItemType === "battery") {
+    scores.maintenanceCandidate += 2;
+    if (snapshot.terminalMode === "none") {
+      scores.intruder += 1;
+    }
+  }
+
+  if (snapshot.terminalMode === "maintenanceRequest") {
+    scores.maintenanceCandidate += 14;
+    scores.intruder = Math.max(0, scores.intruder - 2);
+  }
+
+  if (snapshot.terminalMode === "faultReport") {
+    scores.intruder += 5;
+  }
+
+  const tag = resolveInterpretationTag(scores);
+
   return {
-    tag: "intruder",
+    tag,
+    scores,
     guideMemory: { remainingMs },
   };
 }
@@ -73,24 +133,28 @@ export function evaluateDroneState(
   rule: DroneRule,
   context: DroneContext,
 ): DroneState {
+  const maintenanceConfidence = context.scores.maintenanceCandidate;
+  const visitorConfidence = context.scores.guidedVisitor;
+  const intruderPressure = context.scores.intruder;
   const requiresSlowGuide =
     rule.kind === "scanner" &&
     rule.requiresSlowGuide &&
-    context.interpretation === "maintenanceCandidate";
+    maintenanceConfidence >= visitorConfidence;
 
   if (!context.playerVisible) {
     return "Observe";
   }
 
   if (context.terminalMode === "faultReport") {
-    return "Alert";
+    return intruderPressure >= 5 ? "Alert" : "Warn";
   }
 
   if (rule.kind === "escort") {
     if (
       !context.escortActive ||
       context.escortDistracted ||
-      context.interpretation === "guidedVisitor"
+      context.escortRerouted ||
+      visitorConfidence >= maintenanceConfidence
     ) {
       return "Observe";
     }
@@ -98,17 +162,18 @@ export function evaluateDroneState(
   }
 
   if (
-    context.interpretation === "maintenanceCandidate" &&
+    maintenanceConfidence >= 5 &&
     (!requiresSlowGuide || context.movementMode === "slow")
   ) {
     return "Guide";
   }
 
-  if (context.interpretation === "guidedVisitor") {
+  if (visitorConfidence >= 5 && intruderPressure <= visitorConfidence + 1) {
     return "Guide";
   }
 
   if (
+    intruderPressure >= 6 ||
     context.speed >= FAST_SPEED_THRESHOLD ||
     (context.movementMode === "normal" && !context.isOnTrustedRoute)
   ) {
@@ -120,6 +185,28 @@ export function evaluateDroneState(
 
 export function canDoorOpen(rule: DoorRule, context: DoorContext): boolean {
   if (!rule.accepts.includes(context.interpretation)) {
+    return false;
+  }
+
+  if (
+    rule.minScores &&
+    Object.entries(rule.minScores).some(
+      ([key, value]) =>
+        value !== undefined &&
+        context.scores[key as keyof InterpretationScores] < value,
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    rule.maxScores &&
+    Object.entries(rule.maxScores).some(
+      ([key, value]) =>
+        value !== undefined &&
+        context.scores[key as keyof InterpretationScores] > value,
+    )
+  ) {
     return false;
   }
 

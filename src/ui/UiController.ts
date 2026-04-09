@@ -7,6 +7,7 @@ export interface UiCommands {
 export interface HudViewModel {
   roomName: string;
   interpretation: string;
+  tendency: string;
   terminalMode: string;
   carrying: string;
   hint: string;
@@ -16,6 +17,7 @@ export class UiController {
   private commands: UiCommands | null = null;
   private readonly roomValue: HTMLElement;
   private readonly identityValue: HTMLElement;
+  private readonly tendencyValue: HTMLElement;
   private readonly terminalValue: HTMLElement;
   private readonly carryValue: HTMLElement;
   private readonly hintValue: HTMLElement;
@@ -36,25 +38,26 @@ export class UiController {
 
     const hud = document.createElement("aside");
     hud.className = "hud-panel";
-    hud.setAttribute("aria-label", "状态面板");
+    hud.setAttribute("aria-label", "解释面板");
 
     const hudHeader = document.createElement("div");
     hudHeader.className = "hud-header";
     const hudEyebrow = document.createElement("div");
     hudEyebrow.className = "hud-eyebrow";
-    hudEyebrow.textContent = "状态面板";
+    hudEyebrow.textContent = "解释面板";
     const hudTitle = document.createElement("h2");
     hudTitle.className = "hud-title";
-    hudTitle.textContent = "设施监控";
+    hudTitle.textContent = "设施读数";
     hudHeader.append(hudEyebrow, hudTitle);
 
     const hudScroll = document.createElement("div");
     hudScroll.className = "hud-scroll";
 
     this.roomValue = this.createMetric(hudScroll, "当前区域");
-    this.identityValue = this.createMetric(hudScroll, "当前身份");
+    this.identityValue = this.createMetric(hudScroll, "当前解释");
+    this.tendencyValue = this.createMetric(hudScroll, "解释倾向");
     this.terminalValue = this.createMetric(hudScroll, "局部模式");
-    this.carryValue = this.createMetric(hudScroll, "携带物");
+    this.carryValue = this.createMetric(hudScroll, "携带物品");
 
     const hintWrap = document.createElement("div");
     hintWrap.className = "hint-wrap";
@@ -88,23 +91,24 @@ export class UiController {
   renderHud(viewModel: HudViewModel): void {
     this.roomValue.textContent = viewModel.roomName;
     this.identityValue.textContent = viewModel.interpretation;
+    this.tendencyValue.textContent = viewModel.tendency;
     this.terminalValue.textContent = viewModel.terminalMode;
     this.carryValue.textContent = viewModel.carrying;
     this.hintValue.textContent = viewModel.hint;
   }
 
   showIntro(): void {
-    this.showModal(
-      "接入设施",
+    this.showPhoneMessage(
+      "接应人",
       [
-        "你正潜入一座会持续校验身份与流程的设施。",
-        "先在入口外和同伴完成交接，再穿过外门进入设施。",
-        "目标：深入设施，找到失联的同伴。",
-        "操作：WASD 移动，Shift 慢行，E 拾取/放置，Space 停留示意，R 重置当前房间，Esc 暂停。",
+        "阿述被弄进去了，消息一直断断续续。",
+        "我只能送你到外门。进去看看，人要是还能带出来，就带他走。",
+        "别一上来就露怯，像来办事的就行。",
       ],
+      "WASD 移动，Shift 慢行，E 交互，Space 停留示意",
       [
         {
-          label: "开始潜入",
+          label: "收起手机",
           action: () => this.commands?.start(),
           primary: true,
         },
@@ -115,9 +119,7 @@ export class UiController {
   showPause(): void {
     this.showModal(
       "已暂停",
-      [
-        "你可以继续当前房间，或者直接从头重开三房间切片。",
-      ],
+      ["你可以继续当前房间，或从头重新进入三房间切片。"],
       [
         {
           label: "继续",
@@ -136,8 +138,8 @@ export class UiController {
     this.showModal(
       "观察室",
       [
-        "你一路深入设施，靠的不只是躲避巡查，更是顺着它的流程一路通过。",
-        "当一套系统能替所有人安排位置时，真正稀缺的反而是偏离流程的余地。",
+        "你一路通关，靠的不只是躲避，而是不断塑造系统如何理解你。",
+        "这里最危险的从来不只是监控，而是那些流畅到不再被质疑的自动解释。",
       ],
       [
         {
@@ -150,7 +152,77 @@ export class UiController {
   }
 
   hideModal(): void {
-    this.modal.classList.add("hidden");
+    this.modal.className = "modal hidden";
+  }
+
+  private showPhoneMessage(
+    sender: string,
+    messages: string[],
+    footer: string,
+    actions: Array<{
+      label: string;
+      action: () => void;
+      primary?: boolean;
+    }>,
+  ): void {
+    this.modal.className = "modal phone-modal";
+    this.modalTitle.textContent = "";
+
+    const shell = document.createElement("div");
+    shell.className = "phone-shell";
+
+    const status = document.createElement("div");
+    status.className = "phone-status";
+    status.innerHTML = "<span>23:14</span><span>信号正常</span>";
+
+    const chatHeader = document.createElement("div");
+    chatHeader.className = "phone-chat-header";
+
+    const avatar = document.createElement("div");
+    avatar.className = "phone-avatar";
+    avatar.textContent = sender.slice(0, 1);
+
+    const headerText = document.createElement("div");
+    headerText.className = "phone-header-text";
+    const name = document.createElement("div");
+    name.className = "phone-contact";
+    name.textContent = sender;
+    const state = document.createElement("div");
+    state.className = "phone-presence";
+    state.textContent = "刚发来 3 条消息";
+    headerText.append(name, state);
+    chatHeader.append(avatar, headerText);
+
+    const thread = document.createElement("div");
+    thread.className = "phone-thread";
+
+    messages.forEach((text, index) => {
+      const row = document.createElement("div");
+      row.className = "message-row incoming";
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.textContent = text;
+      row.append(bubble);
+
+      if (index === messages.length - 1) {
+        const meta = document.createElement("div");
+        meta.className = "message-meta";
+        meta.textContent = "已送达";
+        row.append(meta);
+      }
+
+      thread.append(row);
+    });
+
+    const hint = document.createElement("div");
+    hint.className = "phone-hint";
+    hint.textContent = footer;
+
+    shell.append(status, chatHeader, thread, hint);
+    this.modalBody.replaceChildren(shell);
+    this.renderActions(actions);
+    this.modal.classList.remove("hidden");
   }
 
   private showModal(
@@ -162,6 +234,7 @@ export class UiController {
       primary?: boolean;
     }>,
   ): void {
+    this.modal.className = "modal";
     this.modalTitle.textContent = title;
     this.modalBody.replaceChildren(
       ...paragraphs.map((text) => {
@@ -171,6 +244,17 @@ export class UiController {
       }),
     );
 
+    this.renderActions(actions);
+    this.modal.classList.remove("hidden");
+  }
+
+  private renderActions(
+    actions: Array<{
+      label: string;
+      action: () => void;
+      primary?: boolean;
+    }>,
+  ): void {
     this.modalActions.replaceChildren(
       ...actions.map((item) => {
         const button = document.createElement("button");
@@ -181,8 +265,6 @@ export class UiController {
         return button;
       }),
     );
-
-    this.modal.classList.remove("hidden");
   }
 
   private createMetric(parent: HTMLElement, label: string): HTMLElement {
