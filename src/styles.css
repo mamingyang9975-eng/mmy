@@ -1,4 +1,7 @@
 :root {
+  --game-native-width: 1152px;
+  --hud-width: 320px;
+  --frame-gap: 18px;
   color-scheme: dark;
   font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", sans-serif;
   background:
@@ -39,15 +42,19 @@ select {
 .game-frame {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 18px;
-  width: min(1080px, 100%);
+  grid-template-columns: minmax(0, var(--game-native-width)) var(--hud-width);
+  gap: var(--frame-gap);
+  width: min(
+    calc(var(--game-native-width) + var(--hud-width) + var(--frame-gap)),
+    calc(100vw - 36px)
+  );
   align-items: start;
+  justify-content: center;
 }
 
 .game-root {
   position: relative;
-  width: 100%;
+  width: min(100%, var(--game-native-width));
   min-height: 0;
   aspect-ratio: 16 / 9;
   align-self: start;
@@ -64,7 +71,7 @@ select {
 
 .game-root canvas {
   width: 100% !important;
-  height: auto !important;
+  height: 100% !important;
   display: block;
   image-rendering: pixelated;
 }
@@ -225,6 +232,7 @@ select {
 @media (max-width: 980px) {
   .game-frame {
     grid-template-columns: minmax(0, 1fr) 280px;
+    width: min(100%, calc(100vw - 36px));
   }
 }
 

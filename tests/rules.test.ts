@@ -49,6 +49,27 @@ describe("advanceInterpretation", () => {
     expect(follow.tag).toBe("guidedVisitor");
   });
 
+  it("allows the signal zone to establish guided flow without holding slow", () => {
+    const guided = advanceInterpretation(
+      {
+        movementMode: "normal",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+      },
+      createGuideMemory(),
+      16,
+    );
+
+    expect(guided.tag).toBe("guidedVisitor");
+  });
+
   it("prioritizes maintenanceCandidate while maintenance mode is active", () => {
     const result = advanceInterpretation(
       {
@@ -198,6 +219,18 @@ describe("door and terminal rules", () => {
     expect(serviceTray).toBeDefined();
     expect((serviceTray?.rect.x ?? 999) + (serviceTray?.rect.width ?? 0)).toBeLessThan(
       wallX,
+    );
+  });
+
+  it("keeps the room three signal zone between the two doors", () => {
+    const room = ROOMS[2];
+    const signalZone = room.signalZones[0];
+    const leftWallRight = room.wallRects[1].x + room.wallRects[1].width;
+    const rightWallLeft = room.wallRects[2].x;
+
+    expect(signalZone.rect.x).toBeGreaterThanOrEqual(leftWallRight);
+    expect(signalZone.rect.x + signalZone.rect.width).toBeLessThanOrEqual(
+      rightWallLeft,
     );
   });
 });

@@ -38,8 +38,7 @@ export function advanceInterpretation(
   if (
     snapshot.isInSignalZone &&
     snapshot.isIndicating &&
-    snapshot.signalEnabled &&
-    snapshot.movementMode === "slow"
+    snapshot.signalEnabled
   ) {
     remainingMs = GUIDE_MEMORY_MS;
   }
@@ -58,8 +57,7 @@ export function advanceInterpretation(
   if (
     snapshot.isInSignalZone &&
     snapshot.isIndicating &&
-    snapshot.signalEnabled &&
-    snapshot.movementMode === "slow"
+    snapshot.signalEnabled
   ) {
     return {
       tag: "guidedVisitor",

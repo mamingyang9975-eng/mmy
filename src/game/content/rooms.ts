@@ -5,7 +5,7 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-1",
     name: "接入区 / 读懂系统",
     shortName: "房间 1",
-    hint: "先按 E 激活引导面板，再在感应区按住空格示意；之后在巡逻机范围内保持慢行。",
+    hint: "先按 E 激活引导面板，再站定在感应区按住空格示意；之后在巡逻机范围内保持慢行。",
     signage: [
       "本设施不判断对错，仅减少表达歧义。",
       "访客接入前，请先启用引导面板。",
@@ -164,7 +164,7 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-3",
     name: "归档层 / 双重后果",
     shortName: "房间 3",
-    hint: "先借维修身份穿过第一道门，再把护送机引开，重新示意后在可见范围内慢行通过出口。",
+    hint: "先借维修身份穿过第一道门，再站定在中段示意区按住空格，切回访客流后慢行通过出口。",
     signage: ["维修流量默认护送。离线访客请重新示意。"],
     playerSpawn: { x: 44, y: 170 },
     wallRects: [
@@ -267,7 +267,7 @@ export const ROOMS: RoomDefinition[] = [
     signalZones: [
       {
         id: "archive-signal",
-        rect: { x: 316, y: 152, width: 36, height: 28 },
+        rect: { x: 234, y: 150, width: 36, height: 28 },
       },
     ],
     guidePaths: [

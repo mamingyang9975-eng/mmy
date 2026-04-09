@@ -28,6 +28,7 @@ const ROOM_HEIGHT = 216;
 const CAMERA_ZOOM = 3;
 const INTERACT_RANGE = 20;
 const INDICATE_MS = 1000;
+const EXIT_GRACE_MS = 220;
 
 type KeyMap = {
   up: Phaser.Input.Keyboard.Key;
@@ -51,6 +52,7 @@ interface RenderedDoor {
   body: Phaser.Physics.Arcade.StaticBody;
   label: Phaser.GameObjects.Text;
   open: boolean;
+  exitGraceMs: number;
 }
 
 interface RenderedDrone {
@@ -183,7 +185,6 @@ export class GameScene extends Phaser.Scene {
       this.keys.indicate.isDown &&
       isInSignalZone &&
       signalEnabled &&
-      movementMode === "slow" &&
       body.velocity.length() < 10;
     this.indicateChargeMs = canCharge
       ? Math.min(INDICATE_MS, this.indicateChargeMs + delta)
@@ -206,12 +207,11 @@ export class GameScene extends Phaser.Scene {
       delta,
     );
 
+    this.updateEscortMotion(delta);
+    this.syncDoorStates(delta);
     if (this.processExits()) {
       return;
     }
-
-    this.updateEscortMotion(delta);
-    this.syncDoorStates();
     this.syncDroneStates(droneStates);
     this.syncConsoles();
     this.syncGuidePaths();
@@ -305,6 +305,14 @@ export class GameScene extends Phaser.Scene {
     const bg = this.add.graphics();
     bg.fillGradientStyle(0x10161f, 0x10161f, 0x090c11, 0x090c11, 1);
     bg.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
+    bg.fillStyle(0x16304a, 0.08);
+    bg.fillEllipse(ROOM_WIDTH * 0.28, ROOM_HEIGHT * 0.22, 130, 78);
+    bg.fillStyle(0xf3b65b, 0.04);
+    bg.fillEllipse(ROOM_WIDTH * 0.78, ROOM_HEIGHT * 0.7, 168, 112);
+    bg.fillStyle(0x111926, 0.88);
+    bg.fillRoundedRect(8, 8, ROOM_WIDTH - 16, ROOM_HEIGHT - 16, 14);
+    bg.lineStyle(1, 0x233042, 0.9);
+    bg.strokeRoundedRect(8, 8, ROOM_WIDTH - 16, ROOM_HEIGHT - 16, 14);
     bg.lineStyle(1, 0x18212c, 0.85);
     for (let x = 0; x <= ROOM_WIDTH; x += 24) {
       bg.lineBetween(x, 0, x, ROOM_HEIGHT);
@@ -312,6 +320,9 @@ export class GameScene extends Phaser.Scene {
     for (let y = 0; y <= ROOM_HEIGHT; y += 24) {
       bg.lineBetween(0, y, ROOM_WIDTH, y);
     }
+    bg.lineStyle(1, 0x26425c, 0.18);
+    bg.lineBetween(16, 22, ROOM_WIDTH - 16, 22);
+    bg.lineBetween(16, ROOM_HEIGHT - 22, ROOM_WIDTH - 16, ROOM_HEIGHT - 22);
   }
 
   private createPlayer(): void {
@@ -334,6 +345,7 @@ export class GameScene extends Phaser.Scene {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "12px",
       color: "#dce6f7",
+      resolution: CAMERA_ZOOM,
     });
     this.roomTitle.setDepth(10);
   }
@@ -351,32 +363,15 @@ export class GameScene extends Phaser.Scene {
     this.roomTitle.setText(snapshot.room.name);
 
     for (const rect of snapshot.room.wallRects) {
-      const shape = this.add.rectangle(
-        rect.x + rect.width / 2,
-        rect.y + rect.height / 2,
-        rect.width,
-        rect.height,
-        0x171c24,
-      );
-      shape.setStrokeStyle(1, 0x2b3645, 1);
-      shape.setDepth(6);
+      const shape = this.createWallBlock(rect);
       this.physics.add.existing(shape, true);
       const collider = this.physics.add.collider(this.player, shape);
-      this.roomObjects.push(shape);
       this.wallBodies.push(shape);
       this.wallColliders.push(collider);
     }
 
     for (const door of snapshot.room.doors) {
-      const shape = this.add.rectangle(
-        door.rect.x + door.rect.width / 2,
-        door.rect.y + door.rect.height / 2,
-        door.rect.width,
-        door.rect.height,
-        0x2d3b49,
-      );
-      shape.setStrokeStyle(2, 0xefd36a, 0.5);
-      shape.setDepth(7);
+      const shape = this.createDoorBlock(door.rect);
       this.physics.add.existing(shape, true);
       const body = shape.body as Phaser.Physics.Arcade.StaticBody;
       this.wallColliders.push(this.physics.add.collider(this.player, shape));
@@ -385,74 +380,55 @@ export class GameScene extends Phaser.Scene {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "8px",
         color: "#a5b7c8",
+        resolution: CAMERA_ZOOM,
       });
       label.setDepth(8);
+      this.decorateLabel(label);
 
-      this.roomObjects.push(shape, label);
+      this.roomObjects.push(label);
       this.doorObjects.set(door.id, {
         def: door,
         shape,
         body,
         label,
         open: false,
+        exitGraceMs: 0,
       });
     }
 
     if (snapshot.room.terminal) {
       const terminal = snapshot.room.terminal;
-      const body = this.add.rectangle(
-        terminal.body.x + terminal.body.width / 2,
-        terminal.body.y + terminal.body.height / 2,
-        terminal.body.width,
-        terminal.body.height,
-        0x202733,
-      );
-      body.setStrokeStyle(2, 0x64748b, 0.95);
-      body.setDepth(5);
+      const body = this.createTerminalBody(terminal.body);
       const title = this.add.text(terminal.body.x + 6, terminal.body.y + 6, terminal.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "8px",
         color: "#c6d3e0",
+        resolution: CAMERA_ZOOM,
       });
       title.setDepth(8);
-      this.roomObjects.push(body, title);
+      this.decorateLabel(title);
+      this.roomObjects.push(title);
 
       for (const slot of terminal.slots) {
-        const slotShape = this.add.rectangle(
-          slot.rect.x + slot.rect.width / 2,
-          slot.rect.y + slot.rect.height / 2,
-          slot.rect.width,
-          slot.rect.height,
-          0x111722,
-        );
-        slotShape.setStrokeStyle(
-          1.5,
-          slot.id === "fault-slot" ? 0xef5d63 : slot.id === "service-tray" ? 0xf1b562 : 0x63d8ff,
-          0.95,
-        );
-        slotShape.setDepth(6);
+        const accent =
+          slot.id === "fault-slot" ? 0xef5d63 : slot.id === "service-tray" ? 0xf1b562 : 0x63d8ff;
+        const slotShape = this.createSlotBlock(slot.rect, accent);
         const label = this.add.text(slot.rect.x - 4, slot.rect.y + slot.rect.height + 4, slot.label, {
           fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
           fontSize: "7px",
           color: "#8ea0b2",
+          resolution: CAMERA_ZOOM,
         });
         label.setDepth(8);
-        this.roomObjects.push(slotShape, label);
+        this.decorateLabel(label);
+        this.roomObjects.push(label);
         this.slotObjects.set(slot.id, { slot, shape: slotShape, label });
       }
     }
 
     if (snapshot.room.consoles) {
       for (const consoleDef of snapshot.room.consoles) {
-        const shape = this.add.rectangle(
-          consoleDef.rect.x + consoleDef.rect.width / 2,
-          consoleDef.rect.y + consoleDef.rect.height / 2,
-          consoleDef.rect.width,
-          consoleDef.rect.height,
-          0x20343f,
-        );
-        shape.setStrokeStyle(1.5, 0x6be2ff, 0.95);
-        shape.setDepth(6);
+        const shape = this.createConsoleBlock(consoleDef.rect);
         const label = this.add.text(
           consoleDef.rect.x - 10,
           consoleDef.rect.y + consoleDef.rect.height + 4,
@@ -461,10 +437,12 @@ export class GameScene extends Phaser.Scene {
             fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
             fontSize: "7px",
             color: "#8fdff3",
+            resolution: CAMERA_ZOOM,
           },
         );
         label.setDepth(8);
-        this.roomObjects.push(shape, label);
+        this.decorateLabel(label);
+        this.roomObjects.push(label);
         this.consoleObjects.set(consoleDef.id, {
           def: consoleDef,
           shape,
@@ -474,17 +452,22 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const item of snapshot.room.items) {
+      const shadow = this.add.ellipse(item.position.x, item.position.y + 5, 14, 6, 0x05070b, 0.35);
+      shadow.setDepth(11);
       const sprite = this.add.image(item.position.x, item.position.y, "battery-chip");
       sprite.setDepth(12);
       const label = this.add.text(item.position.x - 12, item.position.y + 12, item.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "7px",
         color: "#f4d996",
+        resolution: CAMERA_ZOOM,
       });
       label.setDepth(12);
-      this.roomObjects.push(sprite, label);
+      this.decorateLabel(label);
+      this.roomObjects.push(shadow, sprite, label);
       this.itemObjects.set(item.id, {
         id: item.id,
+        shadow,
         sprite,
         label,
         slotId: null,
@@ -492,17 +475,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const zone of snapshot.room.signalZones) {
-      const shape = this.add.rectangle(
-        zone.rect.x + zone.rect.width / 2,
-        zone.rect.y + zone.rect.height / 2,
-        zone.rect.width,
-        zone.rect.height,
-        0x13445a,
-        0.18,
-      );
-      shape.setStrokeStyle(1.5, 0x6be0ff, 0.8);
-      shape.setDepth(3);
-      this.roomObjects.push(shape);
+      this.createSignalZone(zone.rect);
     }
 
     snapshot.room.signage.forEach((text, index) => {
@@ -510,12 +483,16 @@ export class GameScene extends Phaser.Scene {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "8px",
         color: "#6f8193",
+        resolution: CAMERA_ZOOM,
       });
       sign.setDepth(4);
+      this.decorateLabel(sign);
       this.roomObjects.push(sign);
     });
 
     for (const drone of snapshot.room.drones) {
+      const shadow = this.add.ellipse(drone.position.x, drone.position.y + 6, 18, 8, 0x05070b, 0.34);
+      shadow.setDepth(13);
       const sprite = this.add.image(drone.position.x, drone.position.y, "drone-chip");
       sprite.setDepth(14);
       const light = this.add.circle(drone.position.x, drone.position.y, 3, 0xffffff, 0.8);
@@ -533,17 +510,21 @@ export class GameScene extends Phaser.Scene {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "7px",
         color: "#9ab0c3",
+        resolution: CAMERA_ZOOM,
       });
       label.setDepth(15);
+      this.decorateLabel(label);
       if (drone.rule.kind === "escort" && !snapshot.runtime.escortUnlocked) {
+        shadow.setVisible(false);
         sprite.setVisible(false);
         light.setVisible(false);
         range.setVisible(false);
         label.setVisible(false);
       }
-      this.roomObjects.push(range, sprite, light, label);
+      this.roomObjects.push(range, shadow, sprite, light, label);
       this.droneObjects.set(drone.id, {
         def: drone,
+        shadow,
         sprite,
         light,
         range,
@@ -552,7 +533,7 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    this.syncDoorStates();
+    this.syncDoorStates(0);
     this.syncConsoles();
     this.syncGuidePaths();
     this.syncHud();
@@ -704,7 +685,9 @@ export class GameScene extends Phaser.Scene {
 
     for (const door of room.doors) {
       const renderedDoor = this.doorObjects.get(door.id);
-      if (!canAdvanceThroughDoor(door, renderedDoor?.open ?? false, playerPos)) {
+      const doorReadyToExit =
+        (renderedDoor?.open ?? false) || (renderedDoor?.exitGraceMs ?? 0) > 0;
+      if (!canAdvanceThroughDoor(door, doorReadyToExit, playerPos)) {
         continue;
       }
 
@@ -720,7 +703,7 @@ export class GameScene extends Phaser.Scene {
     return false;
   }
 
-  private syncDoorStates(): void {
+  private syncDoorStates(delta: number): void {
     const approach = this.getDoorApproachState();
     for (const door of this.doorObjects.values()) {
       const open = this.session.canOpenDoor(door.def, approach);
@@ -728,6 +711,9 @@ export class GameScene extends Phaser.Scene {
         this.playTone(open ? 520 : 220, open ? 0.03 : 0.02);
       }
       door.open = open;
+      door.exitGraceMs = open
+        ? EXIT_GRACE_MS
+        : Math.max(0, door.exitGraceMs - delta);
       door.shape.setFillStyle(open ? 0x315f4d : 0x2d3b49, open ? 0.85 : 1);
       door.shape.setStrokeStyle(2, open ? 0x8ff0a4 : 0xefcf69, open ? 0.9 : 0.5);
       door.body.checkCollision.none = open;

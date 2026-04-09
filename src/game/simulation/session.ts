@@ -140,7 +140,8 @@ export class GameSession {
     if (room.id === "room-3" && slotId === "inspection-pad") {
       this.runtime.terminalMode = "none";
       this.runtime.escortDistractedMs = ESCORT_DISTRACT_MS;
-      this.runtime.message = "护送机被检修台吸引，重新示意即可切回访客流量。";
+      this.runtime.message =
+        "护送机被检修台吸引。站定在中段示意区按住空格，即可切回访客流量。";
       return this.runtime.terminalMode;
     }
 
@@ -167,7 +168,7 @@ export class GameSession {
     if (consoleDef.action === "primeGuidance") {
       this.runtime.guideFieldPrimed = true;
       this.runtime.message =
-        "引导面板已激活。现在去感应区示意，然后在巡逻机范围内慢行。";
+        "引导面板已激活。现在站定在感应区按住空格示意，然后在巡逻机范围内慢行。";
     }
   }
 
