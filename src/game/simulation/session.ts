@@ -9,6 +9,7 @@ import {
   resolveTerminalMode,
 } from "./rules";
 import type {
+  CompletionSummary,
   DoorContext,
   DoorDefinition,
   DroneContext,
@@ -89,11 +90,48 @@ function getFilledSlotIds(
   );
 }
 
+function createCompletionSummary(): CompletionSummary {
+  return {
+    title: "门外 / 已领出",
+    paragraphs: [
+      "签出台最后承认的不是一次闯出，而是一次合法领出。你把阿述从设施内部的定义里重新写回了可以被带走的人。",
+      "外面的信号重新落到手机上。那些和系统无关的零碎东西也一起回来: 未接来电、项目消息、共享位置、旧语音。它们重新证明阿述在这里外面还有生活。",
+    ],
+    phone: {
+      sender: "接应人",
+      messages: [
+        "你们出来了。别停，往路灯底下走。",
+        "阿述刚上车的时候一直没说话，只把那张签出回执攥得很紧。",
+        "信号恢复后，他外面的记录一下全回来了。我转给你，看着像碎事，但这些比里面那套编号更像他。",
+      ],
+      footer: "先看回执里的外部记录，或者关掉弹窗后从左下角重新打开手机。",
+    },
+    records: [
+      {
+        label: "签出回执",
+        value: "对象: 阿述 / 状态: 已领出",
+        detail: "系统最终承认了这次带离，不再把他留在隔离位。",
+      },
+      {
+        label: "恢复信号",
+        value: "未接来电 1 条，项目消息 2 条，共享位置 1 个",
+        detail: "一离开内层屏蔽，外部生活立刻挤回你的手机。",
+      },
+      {
+        label: "阿述的外部痕迹",
+        value: "旧语音转写: 出来以后先去吃点热的。",
+        detail: "不是样本、编号或观察对象，而是会惦记夜里吃什么的人。",
+      },
+    ],
+  };
+}
+
 export class GameSession {
   private roomIndex = 0;
   private runtime = createRuntime(ROOMS[0]);
   private paused = true;
   private complete = false;
+  private completion: CompletionSummary | null = null;
 
   getSnapshot(): SessionSnapshot {
     return {
@@ -102,6 +140,7 @@ export class GameSession {
       runtime: this.runtime,
       isPaused: this.paused,
       isComplete: this.complete,
+      completion: this.completion,
     };
   }
 
@@ -189,6 +228,7 @@ export class GameSession {
     this.applyPorterFlow();
     this.applyArchiveReview();
     this.applyOfficeClearance();
+    this.applySubjectRelease();
     if (
       resolveInterpretationTag(
         this.runtime.interpretationScores,
@@ -326,6 +366,17 @@ export class GameSession {
       this.runtime.escortReroutedMs = ESCORT_REROUTE_MS;
       this.runtime.terminalMode = "none";
       this.runtime.message = "广播改派了护送，工单也被撤走了。";
+      return;
+    }
+
+    if (consoleDef.action === "releaseSubject") {
+      if (this.runtime.interpretation !== "guidedVisitor") {
+        this.runtime.message = "签出台还不认你。先在签出区示意，拿到合法领出身份。";
+        return;
+      }
+
+      this.runtime.subjectReleased = true;
+      this.runtime.message = "签出台接受了你的领出请求。阿述正在被转到签出点。";
     }
   }
 
@@ -394,8 +445,9 @@ export class GameSession {
     if (this.roomIndex >= ROOMS.length - 1) {
       this.complete = true;
       this.paused = true;
+      this.completion = createCompletionSummary();
       this.runtime.message =
-        "观察室：你不是躲开了系统，而是一路牵着它的判断走出了整座设施。";
+        "门外：阿述已经跟着你出来了，外部信号正在回到手机上。";
       return false;
     }
 
@@ -410,6 +462,7 @@ export class GameSession {
   private enterRoom(roomIndex: number): void {
     this.roomIndex = roomIndex;
     this.runtime = createRuntime(ROOMS[this.roomIndex]);
+    this.completion = null;
     this.runtime.message = this.getDefaultMessage();
     this.paused = false;
   }
@@ -507,6 +560,18 @@ export class GameSession {
     );
   }
 
+  private applySubjectRelease(): void {
+    if (!this.runtime.subjectReleased) {
+      return;
+    }
+
+    this.runtime.interpretationScores.guidedVisitor += 1.6;
+    this.runtime.interpretationScores.intruder = Math.max(
+      0,
+      this.runtime.interpretationScores.intruder - 0.6,
+    );
+  }
+
   private updateResidents(deltaMs: number): void {
     const room = this.getRoom();
     if (room.residents.length === 0) {
@@ -515,7 +580,8 @@ export class GameSession {
 
     const serviceShouldBeActive =
       (this.runtime.terminalMode === "maintenanceRequest" ||
-        (room.id === "room-2" && this.runtime.terminalMode === "faultReport")) &&
+        (room.id === "room-2" && this.runtime.terminalMode === "faultReport") ||
+        (room.id === "room-6" && this.runtime.subjectReleased)) &&
       this.runtime.alertCountdownMs === null;
 
     for (const resident of room.residents) {
@@ -545,6 +611,25 @@ export class GameSession {
       } else {
         runtimeState.mode = "idle";
       }
+    }
+
+    if (room.id === "room-6") {
+      const waiting = this.hasResidentWaitingAtService();
+
+      if (waiting) {
+        this.runtime.message = "阿述已经到签出点了。保持慢行，带他从出口离开。";
+        return;
+      }
+
+      if (
+        this.runtime.subjectReleased &&
+        Object.values(this.runtime.residentStates).some(
+          (resident) => resident.mode === "answeringService",
+        )
+      ) {
+        this.runtime.message = "签出台正在把阿述从隔离位转到签出点。";
+      }
+      return;
     }
 
     if (room.id !== "room-2") {
@@ -973,6 +1058,22 @@ export class GameSession {
       return this.runtime.officeClearanceMs > 0
         ? "值班许可已经写入。保持慢行，从值班出口离开这一层。"
         : "去交接区站定，等夜班文员把你记进值班流程。";
+    }
+
+    if (room.id === "room-6") {
+      if (this.runtime.subjectReleased && this.hasResidentWaitingAtService()) {
+        return "阿述已经到签出点了。慢慢走向出口，把他从这里带出去。";
+      }
+
+      if (this.runtime.subjectReleased) {
+        return "阿述正在被转到签出点。别乱动，等流程把他送出来。";
+      }
+
+      if (this.runtime.interpretation === "guidedVisitor") {
+        return "签出台现在认你了。去按 E 发起阿述的领出。";
+      }
+
+      return "先在签出区完成示意，让系统把你写成合法领出对象。";
     }
 
     if (

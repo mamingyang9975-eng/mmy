@@ -48,6 +48,10 @@ function enterRoomFive(session: GameSession): void {
   advanceToRoom(session, "room-5");
 }
 
+function enterRoomSix(session: GameSession): void {
+  advanceToRoom(session, "room-6");
+}
+
 describe("advanceInterpretation", () => {
   it("enters guidedVisitor after a completed signal and slow movement inside guide range", () => {
     const guided = advanceInterpretation(
@@ -864,6 +868,121 @@ describe("GameSession", () => {
         isInDroneRange: true,
       }),
     ).toBe(true);
+  });
+
+  it("lets the player sign Asu out once the system reads them as a valid pickup", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomSix(session);
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 96, y: 156 },
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      16,
+    );
+
+    expect(session.getSnapshot().runtime.interpretation).toBe("guidedVisitor");
+
+    session.activateConsole("subject-release-console");
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 120, y: 156 },
+        movementMode: "slow",
+        speed: 8,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      3200,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.subjectReleased).toBe(true);
+    expect(snapshot.runtime.residentStates["subject-asu"]?.mode).toBe(
+      "waitingAtService",
+    );
+    expect(
+      session.canOpenDoor(roomById("room-6").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("creates an ending summary with outside traces of Asu after the signed exit", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomSix(session);
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 96, y: 156 },
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      16,
+    );
+    session.activateConsole("subject-release-console");
+    session.updateIntent(
+      {
+        playerPosition: { x: 120, y: 156 },
+        movementMode: "slow",
+        speed: 8,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      3200,
+    );
+
+    expect(
+      session.canOpenDoor(roomById("room-6").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
+    expect(session.goToNextRoom()).toBe(false);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.isComplete).toBe(true);
+    expect(snapshot.completion?.title).toBe("门外 / 已领出");
+    expect(snapshot.completion?.phone.sender).toBe("接应人");
+    expect(snapshot.completion?.records.some((record) => record.label === "阿述的外部痕迹")).toBe(true);
+    expect(snapshot.completion?.records[2]?.value).toContain("吃点热的");
   });
 
   it("releases the room four escort after signal completion and opens the visitor exit", () => {

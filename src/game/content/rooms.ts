@@ -721,4 +721,89 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
   },
+  {
+    id: "room-6",
+    name: "核心 / 签出转运",
+    shortName: "区域 7",
+    hint: "先在签出区完成示意，让系统把你写成合法领出对象。",
+    signage: [
+      "未签出对象不得离层。",
+      "签出对象请在签出区缓行等待。",
+      "人工签出一经确认，不得中途变更对象。",
+    ],
+    dimensions: {
+      width: 736,
+      height: 216,
+    },
+    playerSpawn: { x: 52, y: 170 },
+    wallRects: [
+      { x: 194, y: 0, width: 22, height: 82 },
+      { x: 194, y: 126, width: 22, height: 90 },
+      { x: 654, y: 0, width: 22, height: 82 },
+      { x: 654, y: 126, width: 22, height: 90 },
+      { x: 348, y: 40, width: 64, height: 16 },
+      { x: 348, y: 160, width: 64, height: 16 },
+      { x: 486, y: 52, width: 54, height: 14 },
+      { x: 486, y: 150, width: 54, height: 14 },
+    ],
+    drones: [],
+    residents: [
+      {
+        id: "subject-asu",
+        label: "阿述",
+        position: { x: 548, y: 168 },
+        servicePoint: { x: 612, y: 152 },
+        speed: 22,
+      },
+    ],
+    staff: [],
+    doors: [
+      {
+        id: "subject-exit",
+        label: "签出出口",
+        rect: { x: 654, y: 82, width: 22, height: 44 },
+        rule: {
+          id: "subject-exit",
+          accepts: ["guidedVisitor"],
+          requiresResidentService: true,
+          requiresSlowMovement: true,
+        },
+        exitToNextRoom: true,
+      },
+    ],
+    consoles: [
+      {
+        id: "subject-release-console",
+        rect: { x: 98, y: 146, width: 18, height: 18 },
+        label: "签出台",
+        prompt: "按 E 发起领出",
+        action: "releaseSubject",
+      },
+    ],
+    items: [],
+    signalZones: [
+      {
+        id: "subject-signout-zone",
+        rect: { x: 74, y: 142, width: 50, height: 30 },
+      },
+    ],
+    waitingZones: [],
+    guidePaths: [
+      {
+        id: "visitor-route-f",
+        color: "blue",
+        activeWhen: "guided",
+        tolerance: 14,
+        points: [
+          { x: 100, y: 156 },
+          { x: 144, y: 150 },
+          { x: 212, y: 132 },
+          { x: 318, y: 118 },
+          { x: 468, y: 118 },
+          { x: 610, y: 118 },
+          { x: 650, y: 104 },
+        ],
+      },
+    ],
+  },
 ];

@@ -27,10 +27,10 @@ new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   render: {
-    pixelArt: false,
-    antialias: true,
-    antialiasGL: true,
-    roundPixels: true,
+    pixelArt: true,
+    antialias: false,
+    antialiasGL: false,
+    roundPixels: false,
   },
   physics: {
     default: "arcade",

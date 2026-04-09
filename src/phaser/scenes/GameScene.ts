@@ -2,7 +2,6 @@
 import { ROOMS } from "../../game/content/rooms";
 import {
   distance,
-  distanceToPolyline,
   distanceToRect,
   rectCenter,
   rectContains,
@@ -26,7 +25,6 @@ import type {
   Rect,
   ResidentDefinition,
   RoomDefinition,
-  RoomRuntime,
   SessionSnapshot,
   StaffDefinition,
   TerminalMode,
@@ -51,6 +49,21 @@ const PRELUDE_GATE_ART_HEIGHT = 156;
 const PRELUDE_GATE_TEXTURE_SCALE = 4;
 const PRELUDE_SCENE_TEXTURE_KEY = "prelude-scene-art";
 const PRELUDE_SCENE_TEXTURE_SCALE = 3;
+const PRELUDE_BUS_CLOSED_TEXTURE_KEY = "prelude-bus-closed";
+const PRELUDE_BUS_OPEN_TEXTURE_KEY = "prelude-bus-open";
+const PRELUDE_BUS_ART_WIDTH = 148;
+const PRELUDE_BUS_ART_HEIGHT = 60;
+const PRELUDE_BUS_TEXTURE_SCALE = 4;
+const PRELUDE_BUS_STOP_X = 90;
+const PRELUDE_BUS_STOP_Y = 150;
+const PRELUDE_BUS_ENTRY_X = -112;
+const PRELUDE_BUS_ENTRY_OVERSHOOT_X = PRELUDE_BUS_STOP_X + 7;
+const PRELUDE_BUS_DOOR_POINT = { x: PRELUDE_BUS_STOP_X + 18, y: 151 };
+const PRELUDE_PLAYER_DROPOFF_POINT = { x: PRELUDE_BUS_STOP_X + 9, y: 166 };
+const PRELUDE_COMPANION_POINT = { x: 132, y: 164 };
+const PRELUDE_BUS_APPROACH_MS = 2400;
+const PRELUDE_BUS_SETTLE_MS = 560;
+const PRELUDE_PLAYER_ALIGHT_MS = 1280;
 const FACILITY_SCENE_TEXTURE_PREFIX = "facility-scene-";
 const FACILITY_SCENE_TEXTURE_SCALE = 3;
 const PRELUDE_GATE_ENTRY_ZONE: Rect = {
@@ -61,6 +74,13 @@ const PRELUDE_GATE_ENTRY_ZONE: Rect = {
 };
 
 type ScenePhase = "prelude" | "facility";
+
+type PreludeArrivalState =
+  | "waiting"
+  | "busApproach"
+  | "busSettle"
+  | "playerAlighting"
+  | "ready";
 
 type KeyMap = {
   up: Phaser.Input.Keyboard.Key;
@@ -74,6 +94,7 @@ type KeyMap = {
   shift: Phaser.Input.Keyboard.Key;
   interact: Phaser.Input.Keyboard.Key;
   indicate: Phaser.Input.Keyboard.Key;
+  skipPrelude: Phaser.Input.Keyboard.Key;
   reset: Phaser.Input.Keyboard.Key;
   pause: Phaser.Input.Keyboard.Key;
 };
@@ -91,6 +112,22 @@ interface PreludeGateVisuals {
   blocker: Phaser.GameObjects.Rectangle;
   body: Phaser.Physics.Arcade.StaticBody;
   art: Phaser.GameObjects.Image;
+}
+
+interface PreludeTransitVisuals {
+  busShadow: Phaser.GameObjects.Ellipse;
+  doorGlow: Phaser.GameObjects.Ellipse;
+  headlightGlow: Phaser.GameObjects.Ellipse;
+  bus: Phaser.GameObjects.Image;
+}
+
+interface PreludePromptVisuals {
+  container: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Text;
+  prefix: Phaser.GameObjects.Text;
+  keycapBg: Phaser.GameObjects.Rectangle;
+  keycapLabel: Phaser.GameObjects.Text;
+  suffix: Phaser.GameObjects.Text;
 }
 
 interface RenderedDrone {
@@ -125,7 +162,6 @@ interface RenderedConsole {
 
 interface RenderedResident {
   def: ResidentDefinition;
-  marker: Phaser.GameObjects.Arc;
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
@@ -134,7 +170,6 @@ interface RenderedResident {
 
 interface RenderedStaff {
   def: StaffDefinition;
-  marker: Phaser.GameObjects.Arc;
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
@@ -225,11 +260,16 @@ export class GameScene extends Phaser.Scene {
     "先靠近同伴按 E 交接，再从右侧外门进去。";
   private preludeCompanionSpoken = false;
   private preludeGateUnlocked = false;
-  private preludeCompanionPrompt: Phaser.GameObjects.Text | null = null;
+  private preludeCompanionPrompt: PreludePromptVisuals | null = null;
   private preludeGate: PreludeGateVisuals | null = null;
+  private preludeTransit: PreludeTransitVisuals | null = null;
+  private preludeArrivalState: PreludeArrivalState = "waiting";
+  private preludeArrivalMs = 0;
+  private preludePlayerVisualVelocity = new Phaser.Math.Vector2();
   private carriedItemId: string | null = null;
   private indicateChargeMs = 0;
   private indicateZoneId: string | null = null;
+  private completionShown = false;
 
   constructor() {
     super("game");
@@ -240,12 +280,12 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(0x0f1319);
     this.cameras.main.setBounds(0, 0, PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT);
     this.cameras.main.setZoom(CAMERA_ZOOM);
-    this.cameras.main.roundPixels = true;
+    this.cameras.main.roundPixels = false;
 
     this.keys = this.createKeys();
     this.createBackdrop();
     this.createPlayer();
-    this.cameras.main.startFollow(this.player, true, 0.18, 0.18);
+    this.cameras.main.startFollow(this.player, true, 0.22, 0.22);
     this.createForeground();
 
     this.ui.bindCommands({
@@ -260,6 +300,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_: number, delta: number): void {
+    if (
+      this.phase === "prelude" &&
+      Phaser.Input.Keyboard.JustDown(this.keys.skipPrelude)
+    ) {
+      this.skipPreludeToFirstRoom();
+      return;
+    }
+
     if (Phaser.Input.Keyboard.JustDown(this.keys.pause)) {
       this.handlePauseToggle();
     }
@@ -312,13 +360,11 @@ export class GameScene extends Phaser.Scene {
       .filter((drone) => this.isDroneVisible(drone))
       .map((drone) => drone.id);
     const isInSignalZone = activeSignalZone !== undefined;
-    const isOnMaintenancePath = this.getActiveGuidePaths(room, runtime)
-      .some((path) => distanceToPolyline(playerPos, path.points) <= path.tolerance);
     const signalEnabled =
       !room.signalRequiresActivation || runtime.guideFieldPrimed;
     const isInGuideRange =
       runtime.guideMemory.remainingMs > 0 && droneVisibility.length > 0;
-    const isOnTrustedRoute = isOnMaintenancePath || isInGuideRange;
+    const isOnTrustedRoute = true;
 
     const canChargeIndication =
       !controlsLocked &&
@@ -396,11 +442,17 @@ export class GameScene extends Phaser.Scene {
 
     if (latestSnapshot.isComplete) {
       body.setVelocity(0, 0);
-      this.ui.showCompletion();
+      if (!this.completionShown && latestSnapshot.completion) {
+        this.completionShown = true;
+        this.ui.showCompletion(latestSnapshot.completion);
+      }
     }
   }
 
   private handleStart(): void {
+    if (this.phase === "prelude" && this.preludeArrivalState === "waiting") {
+      this.startPreludeArrival();
+    }
     this.preludeActive = true;
     this.ui.hideModal();
     this.syncHud();
@@ -420,6 +472,7 @@ export class GameScene extends Phaser.Scene {
     this.session = new GameSession();
     this.phase = "prelude";
     this.preludeActive = false;
+    this.completionShown = false;
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.loadPrelude();
@@ -468,6 +521,7 @@ export class GameScene extends Phaser.Scene {
       shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
       interact: Phaser.Input.Keyboard.KeyCodes.E,
       indicate: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      skipPrelude: Phaser.Input.Keyboard.KeyCodes.K,
       reset: Phaser.Input.Keyboard.KeyCodes.R,
       pause: Phaser.Input.Keyboard.KeyCodes.ESC,
     }) as KeyMap | undefined;
@@ -939,6 +993,62 @@ export class GameScene extends Phaser.Scene {
     ctx.fillRect(0, 170, width, 1);
     ctx.fillStyle = this.colorToRgba(0x162432, 0.68);
     this.fillRoundedRectCanvas(ctx, 24, 122, 128, 42, 8, this.colorToRgba(0x1a2835, 0.76));
+
+    const shelterGlow = ctx.createRadialGradient(86, 102, 10, 86, 102, 72);
+    shelterGlow.addColorStop(0, this.colorToRgba(0x7fdcff, 0.12));
+    shelterGlow.addColorStop(1, this.colorToRgba(0x7fdcff, 0));
+    ctx.fillStyle = shelterGlow;
+    ctx.fillRect(10, 78, 154, 84);
+
+    const stopRoof = ctx.createLinearGradient(0, 92, 0, 110);
+    stopRoof.addColorStop(0, "#33475b");
+    stopRoof.addColorStop(1, "#151f29");
+    this.fillRoundedRectCanvas(ctx, 30, 90, 118, 12, 6, stopRoof);
+    this.strokeRoundedRectCanvas(ctx, 30, 90, 118, 12, 6, this.colorToRgba(0x5b7388, 0.5), 1);
+    ctx.fillStyle = this.colorToRgba(0x83dcff, 0.16);
+    ctx.fillRect(40, 94, 90, 1);
+
+    ctx.fillStyle = this.colorToRgba(0x273848, 0.92);
+    for (const postX of [38, 138]) {
+      this.fillRoundedRectCanvas(ctx, postX, 100, 5, 46, 2, this.colorToRgba(0x22313f, 0.96));
+      ctx.fillRect(postX + 1, 102, 1, 40);
+    }
+    this.fillRoundedRectCanvas(ctx, 48, 106, 80, 34, 6, this.colorToRgba(0x213342, 0.24));
+    this.strokeRoundedRectCanvas(ctx, 48, 106, 80, 34, 6, this.colorToRgba(0x5b7890, 0.3), 1);
+    ctx.fillStyle = this.colorToRgba(0x7ad7ff, 0.1);
+    ctx.fillRect(52, 110, 72, 1);
+    ctx.fillStyle = this.colorToRgba(0xf0b35c, 0.08);
+    ctx.fillRect(52, 135, 72, 1);
+
+    const bench = ctx.createLinearGradient(0, 128, 0, 142);
+    bench.addColorStop(0, "#2b3d4e");
+    bench.addColorStop(1, "#151f28");
+    this.fillRoundedRectCanvas(ctx, 62, 126, 54, 8, 3, bench);
+    this.fillRoundedRectCanvas(ctx, 66, 133, 4, 8, 2, this.colorToRgba(0x1c2835, 0.9));
+    this.fillRoundedRectCanvas(ctx, 108, 133, 4, 8, 2, this.colorToRgba(0x1c2835, 0.9));
+
+    this.fillRoundedRectCanvas(ctx, 18, 98, 12, 48, 5, this.colorToRgba(0x18222d, 0.9));
+    this.strokeRoundedRectCanvas(ctx, 18, 98, 12, 48, 5, this.colorToRgba(0x4f667d, 0.34), 1);
+    this.fillRoundedRectCanvas(ctx, 14, 92, 20, 10, 4, this.colorToRgba(0x233444, 0.98));
+    this.fillRoundedRectCanvas(ctx, 18, 95, 12, 3, 1, this.colorToRgba(0x6ce4ff, 0.2));
+    ctx.font = '600 7px "PingFang SC", "Noto Sans SC", sans-serif';
+    ctx.textAlign = "center";
+    ctx.fillStyle = this.colorToRgba(0xd6eaf7, 0.82);
+    ctx.fillText("站台", 24, 114);
+    ctx.font = '600 6px "Avenir Next", "Noto Sans", sans-serif';
+    ctx.fillStyle = this.colorToRgba(0xf0c96f, 0.72);
+    ctx.fillText("N3", 24, 124);
+
+    ctx.strokeStyle = this.colorToRgba(0xf0c96f, 0.22);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(18, 174);
+    ctx.lineTo(142, 174);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(24, 176);
+    ctx.lineTo(126, 176);
+    ctx.stroke();
 
     const asphaltPatches = [
       { x: 42, y: 144, width: 56, height: 14 },
@@ -1554,7 +1664,8 @@ export class GameScene extends Phaser.Scene {
     this.player = this.physics.add.image(36, 180, "player-chip");
     this.player.setDisplaySize(12, 16);
     this.player.setDepth(19.8);
-    this.player.setAlpha(0.001);
+    this.player.setAlpha(0);
+    this.player.setVisible(false);
     this.player.setDrag(900, 900);
     this.player.setMaxVelocity(NORMAL_SPEED_LIMIT, NORMAL_SPEED_LIMIT);
     this.player.setCollideWorldBounds(true);
@@ -1600,19 +1711,23 @@ export class GameScene extends Phaser.Scene {
     this.clearPreludeObjects();
     this.phase = "prelude";
     this.preludeActive = false;
+    this.preludeArrivalState = "waiting";
+    this.preludeArrivalMs = 0;
     this.preludeCompanionSpoken = false;
     this.preludeGateUnlocked = false;
     this.preludeHint =
-      "先和同伴交接，再进外门。";
+      "收起手机，等公交靠站。";
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
+    this.preludePlayerVisualVelocity.set(0, 0);
 
     this.setWorldFrame(PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT, "prelude");
-    this.player.setPosition(64, 166);
+    this.player.setPosition(PRELUDE_BUS_DOOR_POINT.x, PRELUDE_BUS_DOOR_POINT.y);
     this.player.setVelocity(0, 0);
+    this.setPlayerPresentationVisible(false);
     this.syncPlayerShadow(0);
-    this.roomTitle.setText("设施外 / 入口坡道");
+    this.roomTitle.setText("设施外 / 公交站台");
     this.createPreludeSceneTexture();
     const sceneArt = this.add.image(
       PRELUDE_WIDTH / 2,
@@ -1621,32 +1736,87 @@ export class GameScene extends Phaser.Scene {
     );
     sceneArt.setDisplaySize(PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT);
     sceneArt.setDepth(1.8);
+    this.preludeObjects.push(sceneArt);
+    this.createPreludeTransit();
 
-    const companionShadow = this.add.ellipse(132, 173, 18, 6, 0x05070b, 0.28);
+    const companionShadow = this.add.ellipse(
+      PRELUDE_COMPANION_POINT.x,
+      PRELUDE_COMPANION_POINT.y + 9,
+      18,
+      6,
+      0x05070b,
+      0.28,
+    );
     companionShadow.setDepth(10.5);
-    const companionSprite = this.add.image(132, 164, "companion-chip");
+    const companionSprite = this.add.image(
+      PRELUDE_COMPANION_POINT.x,
+      PRELUDE_COMPANION_POINT.y,
+      "companion-chip",
+    );
     companionSprite.setDisplaySize(12, 16);
     companionSprite.setDepth(11);
-    const companionMarker = this.add.circle(132, 149, 2.5, 0xf6d08e, 0.9);
-    companionMarker.setDepth(11.1);
-    const companionLabel = this.add.text(116, 178, "同伴", {
+    const companionLabel = this.add.text(PRELUDE_COMPANION_POINT.x - 16, 178, "同伴", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "8px",
       color: "#f4d7b2",
       resolution: CAMERA_ZOOM,
     });
-    companionLabel.setDepth(11.2);
+    companionLabel.setDepth(11.1);
     this.decorateLabel(companionLabel);
-    const companionPrompt = this.add.text(74, 124, "按 E 交接", {
+    const companionPromptBody = this.add.text(0, 0, "先等你下车", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-      fontSize: "9px",
+      fontSize: "8px",
       color: "#f8e8d2",
       resolution: CAMERA_ZOOM,
-      wordWrap: { width: 100 },
+      align: "center",
+      wordWrap: { width: 84 },
     });
+    companionPromptBody.setOrigin(0.5, 1);
+    this.decorateLabel(companionPromptBody);
+    const companionPromptPrefix = this.add.text(0, 0, "按", {
+      fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
+      fontSize: "8px",
+      color: "#f8e8d2",
+      resolution: CAMERA_ZOOM,
+    });
+    companionPromptPrefix.setOrigin(0, 0.5);
+    this.decorateLabel(companionPromptPrefix);
+    const companionPromptKeycapBg = this.add.rectangle(0, 0, 14, 11, 0x6f7782, 0.42);
+    companionPromptKeycapBg.setOrigin(0, 0.5);
+    companionPromptKeycapBg.setStrokeStyle(1, 0xc9d2db, 0.2);
+    const companionPromptKeycapLabel = this.add.text(0, 0, "E", {
+      fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
+      fontSize: "8px",
+      fontStyle: "700",
+      color: "#eef4fb",
+      resolution: CAMERA_ZOOM,
+    });
+    companionPromptKeycapLabel.setOrigin(0.5, 0.5);
+    this.decorateLabel(companionPromptKeycapLabel);
+    const companionPromptSuffix = this.add.text(0, 0, "交接", {
+      fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
+      fontSize: "8px",
+      color: "#f8e8d2",
+      resolution: CAMERA_ZOOM,
+    });
+    companionPromptSuffix.setOrigin(0, 0.5);
+    this.decorateLabel(companionPromptSuffix);
+    const companionPrompt = this.add.container(PRELUDE_COMPANION_POINT.x, 144, [
+      companionPromptBody,
+      companionPromptPrefix,
+      companionPromptKeycapBg,
+      companionPromptKeycapLabel,
+      companionPromptSuffix,
+    ]);
     companionPrompt.setDepth(11.3);
-    this.decorateLabel(companionPrompt);
-    this.preludeCompanionPrompt = companionPrompt;
+    this.preludeCompanionPrompt = {
+      container: companionPrompt,
+      body: companionPromptBody,
+      prefix: companionPromptPrefix,
+      keycapBg: companionPromptKeycapBg,
+      keycapLabel: companionPromptKeycapLabel,
+      suffix: companionPromptSuffix,
+    };
     const brief = this.add.text(24, 28, "进去前，先从同伴手里接过最后一件东西。", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "10px",
@@ -1668,16 +1838,64 @@ export class GameScene extends Phaser.Scene {
     this.decorateLabel(facilitySign);
 
     this.preludeObjects.push(
-      sceneArt,
       companionShadow,
       companionSprite,
-      companionMarker,
       companionLabel,
       companionPrompt,
       brief,
       facilitySign,
     );
     this.createPreludeGate();
+    this.syncPreludeTransitVisuals(PRELUDE_BUS_ENTRY_X, PRELUDE_BUS_STOP_Y, "waiting");
+  }
+
+  private createPreludeTransit(): void {
+    this.ensurePreludeBusTextures();
+    const busShadow = this.add.ellipse(PRELUDE_BUS_ENTRY_X + 2, 171, 110, 18, 0x04070b, 0.24);
+    busShadow.setDepth(8.6);
+    const doorGlow = this.add.ellipse(
+      PRELUDE_BUS_ENTRY_X + 18,
+      166,
+      32,
+      9,
+      0x7edcff,
+      0.08,
+    );
+    doorGlow.setDepth(8.7);
+    const headlightGlow = this.add.ellipse(
+      PRELUDE_BUS_ENTRY_X + 56,
+      153,
+      44,
+      16,
+      0xf4c978,
+      0.16,
+    );
+    headlightGlow.setDepth(8.8);
+    const bus = this.add.image(
+      PRELUDE_BUS_ENTRY_X,
+      PRELUDE_BUS_STOP_Y,
+      PRELUDE_BUS_CLOSED_TEXTURE_KEY,
+    );
+    bus.setDisplaySize(PRELUDE_BUS_ART_WIDTH, PRELUDE_BUS_ART_HEIGHT);
+    bus.setDepth(9.2);
+
+    this.preludeObjects.push(busShadow, doorGlow, headlightGlow, bus);
+    this.preludeTransit = {
+      busShadow,
+      doorGlow,
+      headlightGlow,
+      bus,
+    };
+  }
+
+  private startPreludeArrival(): void {
+    this.preludeArrivalState = "busApproach";
+    this.preludeArrivalMs = 0;
+    this.preludeHint = "公交正在进站，先别急着动。";
+    this.player.setPosition(PRELUDE_BUS_DOOR_POINT.x, PRELUDE_BUS_DOOR_POINT.y);
+    this.preludePlayerVisualVelocity.set(0, 0);
+    this.setPlayerPresentationVisible(false);
+    this.syncPrelude();
   }
 
   private createPreludeGate(): void {
@@ -2330,6 +2548,7 @@ export class GameScene extends Phaser.Scene {
   private loadRoom(): void {
     this.clearRoomObjects();
     this.clearPreludeObjects();
+    this.setPlayerPresentationVisible(true);
     const snapshot = this.session.getSnapshot();
     this.phase = "facility";
     this.currentRoom = snapshot.room;
@@ -2495,14 +2714,6 @@ export class GameScene extends Phaser.Scene {
       );
       sprite.setDisplaySize(12, 16);
       sprite.setDepth(11);
-      const marker = this.add.circle(
-        resident.position.x,
-        resident.position.y - 13,
-        2.5,
-        0x9cf5ff,
-        0.9,
-      );
-      marker.setDepth(11.1);
       const label = this.add.text(
         resident.position.x - 12,
         resident.position.y + 12,
@@ -2514,12 +2725,11 @@ export class GameScene extends Phaser.Scene {
           resolution: CAMERA_ZOOM,
         },
       );
-      label.setDepth(11.2);
+      label.setDepth(11.1);
       this.decorateLabel(label);
-      this.roomObjects.push(shadow, serviceHalo, sprite, marker, label);
+      this.roomObjects.push(shadow, serviceHalo, sprite, label);
       this.residentObjects.set(resident.id, {
         def: resident,
-        marker,
         shadow,
         sprite,
         label,
@@ -2549,14 +2759,6 @@ export class GameScene extends Phaser.Scene {
       const sprite = this.add.image(staff.position.x, staff.position.y, "staff-chip");
       sprite.setDisplaySize(12, 16);
       sprite.setDepth(11);
-      const marker = this.add.circle(
-        staff.position.x,
-        staff.position.y - 13,
-        2.5,
-        0xb8fff3,
-        0.9,
-      );
-      marker.setDepth(11.1);
       const label = this.add.text(
         staff.position.x - 12,
         staff.position.y + 12,
@@ -2568,12 +2770,11 @@ export class GameScene extends Phaser.Scene {
           resolution: CAMERA_ZOOM,
         },
       );
-      label.setDepth(11.2);
+      label.setDepth(11.1);
       this.decorateLabel(label);
-      this.roomObjects.push(shadow, statusHalo, sprite, marker, label);
+      this.roomObjects.push(shadow, statusHalo, sprite, label);
       this.staffObjects.set(staff.id, {
         def: staff,
-        marker,
         shadow,
         sprite,
         label,
@@ -2693,6 +2894,7 @@ export class GameScene extends Phaser.Scene {
     this.preludeColliders = [];
     this.preludeGate = null;
     this.preludeCompanionPrompt = null;
+    this.preludeTransit = null;
     for (const object of this.preludeObjects) {
       object.destroy();
     }
@@ -2723,18 +2925,24 @@ export class GameScene extends Phaser.Scene {
 
   private updatePrelude(delta: number): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const velocity = this.getInputVelocity();
+    this.updatePreludeArrival(delta);
+
+    const canControlPrelude =
+      this.preludeActive && this.preludeArrivalState === "ready";
+    const velocity = canControlPrelude
+      ? this.getInputVelocity()
+      : new Phaser.Math.Vector2(0, 0);
     const speedLimit = this.isSpeedBoostActive()
       ? NORMAL_SPEED_LIMIT
       : PRELUDE_SLOW_SPEED;
 
-    if (!this.preludeActive) {
+    if (!canControlPrelude) {
       body.setVelocity(0, 0);
     } else {
       body.setVelocity(velocity.x * speedLimit, velocity.y * speedLimit);
     }
 
-    this.syncPlayerShadow(0);
+    this.syncPlayerShadow(delta);
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
     this.renderIndicateRing(0);
@@ -2746,14 +2954,129 @@ export class GameScene extends Phaser.Scene {
     this.syncHud();
   }
 
-  private processPreludeInteractions(): void {
-    if (!this.preludeActive || !Phaser.Input.Keyboard.JustDown(this.keys.interact)) {
+  private updatePreludeArrival(delta: number): void {
+    if (!this.preludeTransit || !this.preludeActive) {
       return;
     }
 
-    const companionPoint = { x: 132, y: 164 };
+    if (this.preludeArrivalState === "waiting") {
+      this.syncPreludeTransitVisuals(PRELUDE_BUS_ENTRY_X, PRELUDE_BUS_STOP_Y, "waiting");
+      return;
+    }
+
+    this.preludeArrivalMs += delta;
+    this.preludePlayerVisualVelocity.set(0, 0);
+
+    if (this.preludeArrivalState === "busApproach") {
+      const progress = Phaser.Math.Clamp(
+        this.preludeArrivalMs / PRELUDE_BUS_APPROACH_MS,
+        0,
+        1,
+      );
+      const eased = Phaser.Math.Easing.Cubic.Out(progress);
+      const busX = Phaser.Math.Linear(
+        PRELUDE_BUS_ENTRY_X,
+        PRELUDE_BUS_ENTRY_OVERSHOOT_X,
+        eased,
+      );
+      const busY = PRELUDE_BUS_STOP_Y - Math.sin(progress * Math.PI) * 0.7;
+      this.syncPreludeTransitVisuals(busX, busY, "busApproach");
+      if (progress >= 1) {
+        this.preludeArrivalState = "busSettle";
+        this.preludeArrivalMs = 0;
+        this.preludeHint = "车停稳了，等门一开就下车。";
+      }
+      return;
+    }
+
+    if (this.preludeArrivalState === "busSettle") {
+      const progress = Phaser.Math.Clamp(
+        this.preludeArrivalMs / PRELUDE_BUS_SETTLE_MS,
+        0,
+        1,
+      );
+      const eased = Phaser.Math.Easing.Sine.Out(progress);
+      const busX = Phaser.Math.Linear(
+        PRELUDE_BUS_ENTRY_OVERSHOOT_X,
+        PRELUDE_BUS_STOP_X,
+        eased,
+      );
+      const busY =
+        PRELUDE_BUS_STOP_Y +
+        Math.sin(progress * Math.PI) * 0.45 -
+        (1 - eased) * 0.35;
+      this.syncPreludeTransitVisuals(busX, busY, "busSettle");
+      if (progress >= 1) {
+        this.preludeArrivalState = "playerAlighting";
+        this.preludeArrivalMs = 0;
+        this.player.setPosition(PRELUDE_BUS_DOOR_POINT.x, PRELUDE_BUS_DOOR_POINT.y);
+        this.playerFacing = "down";
+        this.setPlayerPresentationVisible(true);
+      }
+      return;
+    }
+
+    if (this.preludeArrivalState === "playerAlighting") {
+      const progress = Phaser.Math.Clamp(
+        this.preludeArrivalMs / PRELUDE_PLAYER_ALIGHT_MS,
+        0,
+        1,
+      );
+      const eased = Phaser.Math.Easing.Sine.Out(progress);
+      const prevX = this.player.x;
+      const prevY = this.player.y;
+      const nextX = Phaser.Math.Linear(
+        PRELUDE_BUS_DOOR_POINT.x,
+        PRELUDE_PLAYER_DROPOFF_POINT.x,
+        eased,
+      );
+      const nextY =
+        Phaser.Math.Linear(
+          PRELUDE_BUS_DOOR_POINT.y,
+          PRELUDE_PLAYER_DROPOFF_POINT.y,
+          eased,
+        ) -
+        Math.sin(eased * Math.PI) * 1.8;
+      this.player.setPosition(nextX, nextY);
+      const seconds = Math.max(delta / 1000, 1 / 120);
+      this.preludePlayerVisualVelocity.set(
+        (nextX - prevX) / seconds,
+        (nextY - prevY) / seconds,
+      );
+      this.playerFacing = progress < 0.55 ? "down" : "right";
+      this.syncPreludeTransitVisuals(
+        PRELUDE_BUS_STOP_X,
+        PRELUDE_BUS_STOP_Y,
+        "playerAlighting",
+      );
+      if (progress >= 1) {
+        this.player.setPosition(
+          PRELUDE_PLAYER_DROPOFF_POINT.x,
+          PRELUDE_PLAYER_DROPOFF_POINT.y,
+        );
+        this.preludePlayerVisualVelocity.set(0, 0);
+        this.playerFacing = "right";
+        this.preludeArrivalState = "ready";
+        this.preludeArrivalMs = 0;
+        this.preludeHint = "先和同伴交接，再进外门。";
+      }
+      return;
+    }
+
+    this.syncPreludeTransitVisuals(PRELUDE_BUS_STOP_X, PRELUDE_BUS_STOP_Y, "ready");
+  }
+
+  private processPreludeInteractions(): void {
+    if (
+      !this.preludeActive ||
+      this.preludeArrivalState !== "ready" ||
+      !Phaser.Input.Keyboard.JustDown(this.keys.interact)
+    ) {
+      return;
+    }
+
     const playerPos = { x: this.player.x, y: this.player.y };
-    if (distance(playerPos, companionPoint) > 28) {
+    if (distance(playerPos, PRELUDE_COMPANION_POINT) > 28) {
       return;
     }
 
@@ -2766,13 +3089,61 @@ export class GameScene extends Phaser.Scene {
 
   private syncPrelude(): void {
     if (this.preludeCompanionPrompt) {
-      this.preludeCompanionPrompt.setText(
-        this.preludeCompanionSpoken
-          ? "“我会盯着你的退路。进去吧。”"
-          : "按 E 交接",
-      );
-      this.preludeCompanionPrompt.setColor(
-        this.preludeCompanionSpoken ? "#bff2cf" : "#f8e8d2",
+      const playerPos = { x: this.player.x, y: this.player.y };
+      const isNearCompanion =
+        this.preludeArrivalState === "ready" &&
+        distance(playerPos, PRELUDE_COMPANION_POINT) <= 32;
+      const prompt = this.preludeCompanionPrompt;
+
+      if (this.preludeCompanionSpoken) {
+        prompt.body.setText(isNearCompanion ? "交接完毕\n从右侧进门" : "");
+        prompt.body.setColor("#bff2cf");
+        prompt.body.setVisible(prompt.body.text.length > 0);
+        prompt.prefix.setVisible(false);
+        prompt.keycapBg.setVisible(false);
+        prompt.keycapLabel.setVisible(false);
+        prompt.suffix.setVisible(false);
+      } else if (this.preludeArrivalState === "ready" && isNearCompanion) {
+        prompt.body.setVisible(false);
+        prompt.prefix.setVisible(true);
+        prompt.keycapBg.setVisible(true);
+        prompt.keycapLabel.setVisible(true);
+        prompt.suffix.setVisible(true);
+
+        prompt.prefix.setColor("#f8e8d2");
+        prompt.suffix.setColor("#f8e8d2");
+        prompt.keycapLabel.setColor("#eef4fb");
+
+        const gap = 4;
+        const keycapPaddingX = 4;
+        const keycapWidth = Math.max(12, prompt.keycapLabel.width + keycapPaddingX * 2);
+        const totalWidth =
+          prompt.prefix.width + gap + keycapWidth + gap + prompt.suffix.width;
+        let cursor = -totalWidth / 2;
+
+        prompt.prefix.setPosition(cursor, 0);
+        cursor += prompt.prefix.width + gap;
+        prompt.keycapBg.setSize(keycapWidth, 11);
+        prompt.keycapBg.setPosition(cursor, 0);
+        prompt.keycapLabel.setPosition(cursor + keycapWidth / 2, 0);
+        cursor += keycapWidth + gap;
+        prompt.suffix.setPosition(cursor, 0);
+      } else {
+        prompt.body.setText("先等你下车");
+        prompt.body.setColor("#c9deef");
+        prompt.body.setVisible(this.preludeArrivalState !== "ready");
+        prompt.prefix.setVisible(false);
+        prompt.keycapBg.setVisible(false);
+        prompt.keycapLabel.setVisible(false);
+        prompt.suffix.setVisible(false);
+      }
+
+      prompt.container.setVisible(
+        prompt.body.visible ||
+          prompt.prefix.visible ||
+          prompt.keycapBg.visible ||
+          prompt.keycapLabel.visible ||
+          prompt.suffix.visible,
       );
     }
 
@@ -2788,8 +3159,45 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private syncPreludeTransitVisuals(
+    busX: number,
+    busY: number,
+    state: PreludeArrivalState,
+  ): void {
+    if (!this.preludeTransit) {
+      return;
+    }
+
+    const busOpen = state === "playerAlighting" || state === "ready";
+    const settling = state === "busSettle";
+    const headlightAlpha =
+      state === "busApproach"
+        ? 0.22
+        : state === "busSettle"
+          ? 0.14
+          : 0.06;
+    const doorGlowAlpha =
+      state === "playerAlighting"
+        ? 0.2
+        : state === "ready"
+          ? 0.11
+          : 0.04;
+
+    this.preludeTransit.bus.setTexture(
+      busOpen ? PRELUDE_BUS_OPEN_TEXTURE_KEY : PRELUDE_BUS_CLOSED_TEXTURE_KEY,
+    );
+    this.preludeTransit.bus.setPosition(busX, busY);
+    this.preludeTransit.busShadow.setPosition(busX + 2, busY + 21);
+    this.preludeTransit.busShadow.setScale(settling ? 1.01 : 1, 1);
+    this.preludeTransit.busShadow.setAlpha(state === "waiting" ? 0.12 : 0.24);
+    this.preludeTransit.doorGlow.setPosition(busX + 18, busY + 17);
+    this.preludeTransit.doorGlow.setAlpha(doorGlowAlpha);
+    this.preludeTransit.headlightGlow.setPosition(busX + 60, busY + 4);
+    this.preludeTransit.headlightGlow.setAlpha(headlightAlpha);
+  }
+
   private processPreludeExit(): boolean {
-    if (!this.preludeGateUnlocked) {
+    if (!this.preludeGateUnlocked || this.preludeArrivalState !== "ready") {
       return false;
     }
 
@@ -2806,6 +3214,12 @@ export class GameScene extends Phaser.Scene {
     this.session.start();
     this.loadRoom();
     this.syncHud();
+  }
+
+  private skipPreludeToFirstRoom(): void {
+    this.preludeActive = false;
+    this.ui.hideModal();
+    this.enterFacility();
   }
 
   private processInteractions(): void {
@@ -3112,40 +3526,6 @@ export class GameScene extends Phaser.Scene {
 
   private syncGuidePaths(): void {
     this.guideGraphics.clear();
-    const runtime = this.session.getSnapshot().runtime;
-    for (const path of this.currentRoom.guidePaths) {
-      const active =
-        (path.activeWhen === "maintenance" &&
-          runtime.terminalMode === "maintenanceRequest") ||
-        (path.activeWhen === "guided" &&
-          (runtime.guideMemory.remainingMs > 0 ||
-            runtime.interpretation === "guidedVisitor"));
-      const color =
-        path.color === "amber"
-          ? active
-            ? 0xf3b65b
-            : 0x6f5b33
-          : active
-            ? 0x6be2ff
-            : 0x284d65;
-      const glowWidth = path.color === "blue" ? 11 : 8;
-      const coreWidth = path.color === "blue" ? 5 : 4;
-      const glowAlpha = active ? 0.2 : 0.08;
-      const coreAlpha = active ? 0.95 : 0.4;
-      const [first, ...rest] = path.points;
-
-      this.guideGraphics.lineStyle(glowWidth, color, glowAlpha);
-      this.guideGraphics.beginPath();
-      this.guideGraphics.moveTo(first.x, first.y);
-      rest.forEach((point) => this.guideGraphics.lineTo(point.x, point.y));
-      this.guideGraphics.strokePath();
-
-      this.guideGraphics.lineStyle(coreWidth, color, coreAlpha);
-      this.guideGraphics.beginPath();
-      this.guideGraphics.moveTo(first.x, first.y);
-      rest.forEach((point) => this.guideGraphics.lineTo(point.x, point.y));
-      this.guideGraphics.strokePath();
-    }
   }
 
   private syncItems(): void {
@@ -3167,16 +3547,18 @@ export class GameScene extends Phaser.Scene {
   private syncPlayerShadow(delta: number): void {
     this.syncPlayerVisual(delta);
 
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const motion = this.getPlayerMotionVector();
     const moveRatio = Phaser.Math.Clamp(
-      body.velocity.length() / NORMAL_SPEED_LIMIT,
+      motion.length() / NORMAL_SPEED_LIMIT,
       0,
       1,
     );
+    const shadowX = this.player.x;
+    const shadowY = this.player.y + 7 + this.playerBobOffset * 0.08;
 
     this.playerShadow.setPosition(
-      this.player.x,
-      this.player.y + 7 + this.playerBobOffset * 0.08,
+      shadowX,
+      shadowY,
     );
     this.playerShadow.setScale(
       1 - this.playerBobOffset * 0.028,
@@ -3186,9 +3568,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlayerVisual(delta: number): void {
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const { x, y } = body.velocity;
-    const speed = body.velocity.length();
+    const motion = this.getPlayerMotionVector();
+    const { x, y } = motion;
+    const speed = motion.length();
     const moveRatio = Phaser.Math.Clamp(speed / NORMAL_SPEED_LIMIT, 0, 1);
     const moving = speed > 4;
 
@@ -3241,6 +3623,24 @@ export class GameScene extends Phaser.Scene {
       lateralLean,
       verticalLean,
     );
+  }
+
+  private getPlayerMotionVector(): Phaser.Math.Vector2 {
+    if (
+      this.phase === "prelude" &&
+      this.preludeArrivalState === "playerAlighting"
+    ) {
+      return this.preludePlayerVisualVelocity;
+    }
+
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    return body.velocity;
+  }
+
+  private setPlayerPresentationVisible(visible: boolean): void {
+    this.playerVisual.setVisible(visible);
+    this.playerShadow.setVisible(visible);
+    this.indicateRing.setVisible(false);
   }
 
   private drawPlayerSidePose(
@@ -3383,7 +3783,196 @@ export class GameScene extends Phaser.Scene {
     g.fillRoundedRect(headX - 2.8, headY - 3.3, 5.55, 1.7, 0.95);
     g.fillRect(headX - 2.8, headY - 1.9, 0.92, 0.92);
     g.fillRect(headX + 1.88, headY - 1.9, 0.92, 0.92);
+  }
 
+  private ensurePreludeBusTextures(): void {
+    this.createPreludeBusTexture(PRELUDE_BUS_CLOSED_TEXTURE_KEY, false);
+    this.createPreludeBusTexture(PRELUDE_BUS_OPEN_TEXTURE_KEY, true);
+  }
+
+  private createPreludeBusTexture(key: string, doorOpen: boolean): void {
+    if (this.textures.exists(key)) {
+      this.textures.remove(key);
+    }
+
+    const canvasWidth = PRELUDE_BUS_ART_WIDTH * PRELUDE_BUS_TEXTURE_SCALE;
+    const canvasHeight = PRELUDE_BUS_ART_HEIGHT * PRELUDE_BUS_TEXTURE_SCALE;
+    const texture = this.textures.createCanvas(key, canvasWidth, canvasHeight);
+    if (!texture) {
+      throw new Error(`无法创建前奏公交纹理：${key}`);
+    }
+
+    const ctx = texture.context;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.imageSmoothingEnabled = true;
+    ctx.scale(PRELUDE_BUS_TEXTURE_SCALE, PRELUDE_BUS_TEXTURE_SCALE);
+    this.drawPreludeBusTexture(
+      ctx,
+      PRELUDE_BUS_ART_WIDTH,
+      PRELUDE_BUS_ART_HEIGHT,
+      doorOpen,
+    );
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    texture.refresh();
+  }
+
+  private drawPreludeBusTexture(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    _height: number,
+    doorOpen: boolean,
+  ): void {
+    const busShell = ctx.createLinearGradient(8, 10, 120, 52);
+    busShell.addColorStop(0, "#355066");
+    busShell.addColorStop(0.45, "#223646");
+    busShell.addColorStop(1, "#111922");
+    const beltLine = ctx.createLinearGradient(0, 0, 0, 14);
+    beltLine.addColorStop(0, "#5fd7ff");
+    beltLine.addColorStop(1, this.colorToRgba(0x5fd7ff, 0.18));
+    const windshield = ctx.createLinearGradient(0, 0, 0, 16);
+    windshield.addColorStop(0, this.colorToRgba(0xbbefff, 0.42));
+    windshield.addColorStop(1, this.colorToRgba(0x6eb8d8, 0.08));
+
+    this.fillRoundedRectCanvas(ctx, 8, 12, width - 30, 34, 12, busShell);
+    this.strokeRoundedRectCanvas(
+      ctx,
+      8,
+      12,
+      width - 30,
+      34,
+      12,
+      this.colorToRgba(0x5f7890, 0.54),
+      2,
+    );
+    this.fillRoundedRectCanvas(ctx, 18, 6, 68, 12, 6, this.colorToRgba(0x31485b, 0.94));
+    this.strokeRoundedRectCanvas(ctx, 18, 6, 68, 12, 6, this.colorToRgba(0x5b7287, 0.36), 1);
+    this.fillRoundedRectCanvas(ctx, 22, 9, 58, 2, 1, this.colorToRgba(0x82e2ff, 0.18));
+
+    this.fillRoundedRectCanvas(ctx, 18, 18, 72, 12, 4, this.colorToRgba(0x162430, 0.92));
+    for (const windowX of [22, 34, 46, 58, 70]) {
+      this.fillRoundedRectCanvas(ctx, windowX, 20, 9, 8, 2, windshield);
+      ctx.fillStyle = this.colorToRgba(0xffffff, 0.14);
+      ctx.fillRect(windowX + 1, 21, 6, 1);
+    }
+
+    this.fillRoundedRectCanvas(ctx, 92, 18, 18, 12, 4, windshield);
+    this.strokeRoundedRectCanvas(ctx, 92, 18, 18, 12, 4, this.colorToRgba(0x7bcdf3, 0.18), 1);
+    this.fillRoundedRectCanvas(ctx, 112, 18, 10, 16, 4, windshield);
+    this.fillRoundedRectCanvas(ctx, 116, 21, 4, 8, 1, this.colorToRgba(0xeff8ff, 0.14));
+
+    this.fillRoundedRectCanvas(ctx, 12, 31, 108, 7, 3, this.colorToRgba(0x0f1821, 0.22));
+    this.fillRoundedRectCanvas(ctx, 16, 32, 60, 2, 1, beltLine);
+    this.fillRoundedRectCanvas(ctx, 79, 32, 18, 2, 1, this.colorToRgba(0xf0c96f, 0.26));
+
+    const doorPanelX = 78;
+    if (doorOpen) {
+      this.fillRoundedRectCanvas(ctx, doorPanelX, 21, 18, 22, 4, this.colorToRgba(0x091018, 0.96));
+      this.strokeRoundedRectCanvas(
+        ctx,
+        doorPanelX,
+        21,
+        18,
+        22,
+        4,
+        this.colorToRgba(0x5fcfff, 0.24),
+        1,
+      );
+      this.fillRoundedRectCanvas(
+        ctx,
+        doorPanelX + 2,
+        39,
+        14,
+        4,
+        2,
+        this.colorToRgba(0xf0c96f, 0.14),
+      );
+      this.fillRoundedRectCanvas(
+        ctx,
+        doorPanelX + 6,
+        24,
+        1,
+        14,
+        0.5,
+        this.colorToRgba(0x9ce8ff, 0.1),
+      );
+      this.fillRoundedRectCanvas(
+        ctx,
+        doorPanelX + 11,
+        24,
+        1,
+        14,
+        0.5,
+        this.colorToRgba(0x9ce8ff, 0.1),
+      );
+    } else {
+      this.fillRoundedRectCanvas(ctx, doorPanelX, 18, 18, 25, 4, this.colorToRgba(0x243746, 0.9));
+      this.strokeRoundedRectCanvas(
+        ctx,
+        doorPanelX,
+        18,
+        18,
+        25,
+        4,
+        this.colorToRgba(0x67849a, 0.38),
+        1,
+      );
+      this.fillRoundedRectCanvas(ctx, doorPanelX + 2, 20, 14, 10, 2, windshield);
+      this.fillRoundedRectCanvas(
+        ctx,
+        doorPanelX + 8,
+        31,
+        1,
+        9,
+        0.5,
+        this.colorToRgba(0x94dfff, 0.14),
+      );
+    }
+
+    this.fillRoundedRectCanvas(ctx, 18, 42, 104, 3, 1, this.colorToRgba(0x0d151d, 0.58));
+    this.fillRoundedRectCanvas(ctx, 26, 44, 20, 4, 2, this.colorToRgba(0x121a22, 0.95));
+    this.fillRoundedRectCanvas(ctx, 90, 44, 20, 4, 2, this.colorToRgba(0x121a22, 0.95));
+    this.fillRoundedRectCanvas(ctx, 12, 38, 10, 4, 2, this.colorToRgba(0xf3c979, 0.18));
+    this.fillRoundedRectCanvas(ctx, 115, 36, 7, 4, 2, this.colorToRgba(0xf4d48b, 0.82));
+
+    for (const wheel of [
+      { x: 34, y: 48 },
+      { x: 98, y: 48 },
+    ] as const) {
+      ctx.fillStyle = this.colorToRgba(0x070b10, 0.9);
+      ctx.beginPath();
+      ctx.arc(wheel.x, wheel.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = this.colorToRgba(0x516171, 0.9);
+      ctx.beginPath();
+      ctx.arc(wheel.x, wheel.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = this.colorToRgba(0xdce6ef, 0.2);
+      ctx.beginPath();
+      ctx.arc(wheel.x, wheel.y, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = this.colorToRgba(0xffffff, 0.08);
+    ctx.lineWidth = 1;
+    for (const streak of [
+      [20, 15, 70, 13],
+      [28, 36, 60, 36],
+      [86, 15, 116, 14],
+    ] as const) {
+      ctx.beginPath();
+      ctx.moveTo(streak[0], streak[1]);
+      ctx.lineTo(streak[2], streak[3]);
+      ctx.stroke();
+    }
+
+    ctx.font = '600 7px "PingFang SC", "Noto Sans SC", sans-serif';
+    ctx.textAlign = "left";
+    ctx.fillStyle = this.colorToRgba(0xe7f3fb, 0.84);
+    ctx.fillText("夜间接驳", 24, 16);
+    ctx.font = '600 6px "Avenir Next", "Noto Sans", sans-serif';
+    ctx.fillStyle = this.colorToRgba(doorOpen ? 0x9df6bc : 0xf0c96f, 0.82);
+    ctx.fillText(doorOpen ? "DOOR OPEN" : "ARRIVING", 22, 39);
   }
 
   private syncHud(): void {
@@ -3425,21 +4014,6 @@ export class GameScene extends Phaser.Scene {
       carrying: this.carriedItemId ? "电池" : "空手",
       hint: snapshot.runtime.message ?? snapshot.room.hint,
       hintTone,
-    });
-  }
-
-  private getActiveGuidePaths(
-    room: RoomDefinition,
-    runtime: RoomRuntime,
-  ) {
-    return room.guidePaths.filter((path) => {
-      return (
-        (path.activeWhen === "maintenance" &&
-          runtime.terminalMode === "maintenanceRequest") ||
-        (path.activeWhen === "guided" &&
-          (runtime.guideMemory.remainingMs > 0 ||
-            runtime.interpretation === "guidedVisitor"))
-      );
     });
   }
 
@@ -3618,7 +4192,6 @@ export class GameScene extends Phaser.Scene {
       resident.shadow.setPosition(position.x, position.y + 7);
       resident.serviceHalo.setPosition(position.x, position.y);
       resident.sprite.setPosition(position.x, position.y);
-      resident.marker.setPosition(position.x, position.y - 13);
       resident.label.setPosition(position.x - 12, position.y + 12);
 
       const waiting = residentRuntime.mode === "waitingAtService";
@@ -3633,7 +4206,6 @@ export class GameScene extends Phaser.Scene {
         waiting ? 0x7df2bc : 0xf2be67,
         waiting ? 0.78 : 0.45,
       );
-      resident.marker.setFillStyle(waiting ? 0x7df2bc : 0x9cf5ff, 0.92);
       resident.sprite.setAlpha(waiting ? 1 : 0.96);
       resident.label.setColor(waiting ? "#b9ffd7" : "#cfe6f5");
     }
@@ -3651,7 +4223,6 @@ export class GameScene extends Phaser.Scene {
       staff.shadow.setPosition(position.x, position.y + 7);
       staff.statusHalo.setPosition(position.x, position.y);
       staff.sprite.setPosition(position.x, position.y);
-      staff.marker.setPosition(position.x, position.y - 13);
       staff.label.setPosition(position.x - 12, position.y + 12);
 
       const checking = staffRuntime.mode === "checkingQueue";
@@ -3676,25 +4247,12 @@ export class GameScene extends Phaser.Scene {
           : checking
             ? 0x7df2bc
             : 0x73d4ff;
-      const idleColor =
-        staff.def.role === "porter"
-          ? 0xf2be67
-          : staff.def.role === "archivist"
-            ? 0x6be2ff
-            : staff.def.role === "clerk"
-              ? 0xc6f1ff
-            : 0x73d4ff;
-
       staff.statusHalo.setVisible(checking || moving || loading);
       staff.statusHalo.setFillStyle(activeColor, checking || loading ? 0.14 : 0.07);
       staff.statusHalo.setStrokeStyle(
         1.5,
         activeColor,
         checking || loading ? 0.78 : 0.45,
-      );
-      staff.marker.setFillStyle(
-        checking || loading ? activeColor : idleColor,
-        0.92,
       );
       staff.label.setColor(
         checking

@@ -268,6 +268,25 @@ export interface InterpretationResult {
   guideMemory: GuideMemory;
 }
 
+export interface PhoneThreadSummary {
+  sender: string;
+  messages: string[];
+  footer: string;
+}
+
+export interface CompletionRecord {
+  label: string;
+  value: string;
+  detail: string;
+}
+
+export interface CompletionSummary {
+  title: string;
+  paragraphs: string[];
+  phone: PhoneThreadSummary;
+  records: CompletionRecord[];
+}
+
 export interface RoomRuntime {
   terminalMode: TerminalMode;
   interpretation: InterpretationTag;
@@ -300,4 +319,5 @@ export interface SessionSnapshot {
   runtime: RoomRuntime;
   isPaused: boolean;
   isComplete: boolean;
+  completion: CompletionSummary | null;
 }

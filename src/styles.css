@@ -77,7 +77,8 @@ select {
   width: 100% !important;
   height: 100% !important;
   display: block;
-  image-rendering: auto;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .game-overlay {
@@ -99,9 +100,9 @@ select {
 .game-status-strip {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 16px;
   max-width: min(78%, 760px);
-  padding: 9px 14px;
+  padding: 11px 18px;
   border-radius: 999px;
   border: 1px solid rgba(176, 209, 240, 0.12);
   background:
@@ -120,19 +121,19 @@ select {
 }
 
 .game-status-block + .game-status-block {
-  padding-left: 14px;
+  padding-left: 16px;
   border-left: 1px solid rgba(176, 209, 240, 0.12);
 }
 
 .game-status-label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(168, 187, 208, 0.68);
 }
 
 .game-status-value {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
   color: rgba(236, 244, 252, 0.84);
@@ -353,6 +354,47 @@ select {
 
 .modal-body p {
   margin: 0;
+}
+
+.completion-modal .modal-body {
+  max-width: 60ch;
+}
+
+.completion-records {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.completion-record {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(20, 30, 43, 0.94), rgba(14, 21, 31, 0.94)),
+    radial-gradient(circle at top right, rgba(107, 226, 255, 0.08), transparent 42%);
+  border: 1px solid rgba(129, 170, 206, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.completion-record-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7f95ab;
+}
+
+.completion-record-value {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #edf5fd;
+}
+
+.completion-record-detail {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #bfd0e3;
 }
 
 .phone-shell {

@@ -1,3 +1,5 @@
+import type { CompletionSummary } from "../game/simulation/types";
+
 export interface UiCommands {
   start: () => void;
   resume: () => void;
@@ -200,18 +202,20 @@ export class UiController {
     );
   }
 
-  showCompletion(): void {
-    this.showModal(
-      "观察室",
+  showCompletion(summary: CompletionSummary): void {
+    this.showPhoneMessage(
+      summary.phone.sender,
+      summary.phone.messages,
+      summary.phone.footer,
       [
-        "你一路穿过设施，靠的不是躲开系统，而是让它一路把你读成能被放行的人。",
-        "这里真正危险的，不是摄像头本身，而是那些看起来合理的自动判断。",
-      ],
-      [
+        {
+          label: "查看回执",
+          action: () => this.showCompletionReport(summary),
+          primary: true,
+        },
         {
           label: "再来一次",
           action: () => this.commands?.restart(),
-          primary: true,
         },
       ],
     );
@@ -315,6 +319,56 @@ export class UiController {
     );
 
     this.renderActions(actions);
+    this.modal.classList.remove("hidden");
+  }
+
+  private showCompletionReport(summary: CompletionSummary): void {
+    this.activeModal = "generic";
+    this.updatePhoneButton();
+    this.modal.className = "modal completion-modal";
+    this.modalTitle.textContent = summary.title;
+
+    const paragraphs = summary.paragraphs.map((text) => {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = text;
+      return paragraph;
+    });
+
+    const records = document.createElement("div");
+    records.className = "completion-records";
+
+    summary.records.forEach((record) => {
+      const card = document.createElement("section");
+      card.className = "completion-record";
+
+      const label = document.createElement("div");
+      label.className = "completion-record-label";
+      label.textContent = record.label;
+
+      const value = document.createElement("div");
+      value.className = "completion-record-value";
+      value.textContent = record.value;
+
+      const detail = document.createElement("div");
+      detail.className = "completion-record-detail";
+      detail.textContent = record.detail;
+
+      card.append(label, value, detail);
+      records.append(card);
+    });
+
+    this.modalBody.replaceChildren(...paragraphs, records);
+    this.renderActions([
+      {
+        label: "重看手机",
+        action: () => this.showCompletion(summary),
+        primary: true,
+      },
+      {
+        label: "再来一次",
+        action: () => this.commands?.restart(),
+      },
+    ]);
     this.modal.classList.remove("hidden");
   }
 
