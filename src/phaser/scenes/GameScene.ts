@@ -18,6 +18,7 @@ import type {
   DroneDefinition,
   DroneState,
   ItemSlot,
+  Rect,
   RoomDefinition,
   TerminalMode,
 } from "../../game/simulation/types";
@@ -57,6 +58,7 @@ interface RenderedDoor {
 
 interface RenderedDrone {
   def: DroneDefinition;
+  shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
   light: Phaser.GameObjects.Arc;
   range: Phaser.GameObjects.Arc;
@@ -66,6 +68,7 @@ interface RenderedDrone {
 
 interface RenderedItem {
   id: string;
+  shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   slotId: string | null;
@@ -350,6 +353,255 @@ export class GameScene extends Phaser.Scene {
     this.roomTitle.setDepth(10);
   }
 
+  private createWallBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    this.addShadowRect(rect, 5.5, 10, 8, 3, 0.42);
+    const shape = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x1d2734,
+    );
+    shape.setStrokeStyle(2, 0x42526b, 1);
+    shape.setDepth(6);
+    const core = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(4, rect.width - 6),
+      Math.max(4, rect.height - 6),
+      0x263242,
+      0.88,
+    );
+    core.setDepth(6.05);
+    const trim = this.add.graphics();
+    trim.setDepth(6.1);
+    trim.lineStyle(1, 0x7d8fa5, 0.18);
+    if (rect.height >= rect.width) {
+      trim.lineBetween(rect.x + 4, rect.y + 8, rect.x + 4, rect.y + rect.height - 8);
+      trim.lineBetween(
+        rect.x + rect.width - 4,
+        rect.y + 8,
+        rect.x + rect.width - 4,
+        rect.y + rect.height - 8,
+      );
+    } else {
+      trim.lineBetween(rect.x + 8, rect.y + 4, rect.x + rect.width - 8, rect.y + 4);
+      trim.lineBetween(
+        rect.x + 8,
+        rect.y + rect.height - 4,
+        rect.x + rect.width - 8,
+        rect.y + rect.height - 4,
+      );
+    }
+    this.roomObjects.push(shape, core, trim);
+    return shape;
+  }
+
+  private createDoorBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    this.addShadowRect(rect, 6.55, 10, 10, 3, 0.45);
+    const frame = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width + 6,
+      rect.height + 6,
+      0x1a212d,
+      0.9,
+    );
+    frame.setStrokeStyle(1, 0x304055, 0.95);
+    frame.setDepth(6.85);
+    const shape = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x354251,
+    );
+    shape.setStrokeStyle(2, 0xefd36a, 0.5);
+    shape.setDepth(7);
+    const slit = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 8,
+      Math.max(6, rect.width - 8),
+      2,
+      0xefcf69,
+      0.28,
+    );
+    slit.setDepth(7.1);
+    const core = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(4, rect.width - 8),
+      Math.max(10, rect.height - 12),
+      0x24303e,
+      0.5,
+    );
+    core.setDepth(7.05);
+    this.roomObjects.push(frame, shape, core, slit);
+    return shape;
+  }
+
+  private createTerminalBody(rect: Rect): Phaser.GameObjects.Rectangle {
+    this.addShadowRect(rect, 4.7, 12, 10, 3, 0.4);
+    const body = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x202733,
+    );
+    body.setStrokeStyle(2, 0x64748b, 0.95);
+    body.setDepth(5);
+    const inner = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(8, rect.width - 8),
+      Math.max(8, rect.height - 8),
+      0x273342,
+      0.88,
+    );
+    inner.setDepth(5.05);
+    const header = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 10,
+      Math.max(12, rect.width - 12),
+      8,
+      0x33465b,
+      0.9,
+    );
+    header.setDepth(5.1);
+    const scan = this.add.graphics();
+    scan.setDepth(5.12);
+    scan.lineStyle(1, 0xffffff, 0.04);
+    for (let y = rect.y + 20; y < rect.y + rect.height - 8; y += 8) {
+      scan.lineBetween(rect.x + 7, y, rect.x + rect.width - 7, y);
+    }
+    this.roomObjects.push(body, inner, header, scan);
+    return body;
+  }
+
+  private createSlotBlock(rect: Rect, accent: number): Phaser.GameObjects.Rectangle {
+    this.addShadowRect(rect, 5.7, 6, 6, 2, 0.34);
+    const shape = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x131b26,
+    );
+    shape.setStrokeStyle(1.5, accent, 0.95);
+    shape.setDepth(6);
+    const inner = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(4, rect.width - 6),
+      Math.max(4, rect.height - 6),
+      0x1d2735,
+      0.9,
+    );
+    inner.setDepth(6.05);
+    const indicator = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 3,
+      Math.max(4, rect.width - 8),
+      2,
+      accent,
+      0.22,
+    );
+    indicator.setDepth(6.1);
+    this.roomObjects.push(shape, inner, indicator);
+    return shape;
+  }
+
+  private createConsoleBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    this.addShadowRect(rect, 5.8, 8, 8, 2, 0.36);
+    const shape = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x223746,
+    );
+    shape.setStrokeStyle(1.5, 0x6be2ff, 0.95);
+    shape.setDepth(6);
+    const inner = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(4, rect.width - 6),
+      Math.max(4, rect.height - 6),
+      0x162631,
+      0.95,
+    );
+    inner.setDepth(6.05);
+    const diode = this.add.circle(rect.x + rect.width / 2, rect.y + rect.height / 2, 2, 0x84f0ff, 0.75);
+    diode.setDepth(6.1);
+    this.roomObjects.push(shape, inner, diode);
+    return shape;
+  }
+
+  private createSignalZone(rect: Rect): void {
+    const shape = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x13445a,
+      0.18,
+    );
+    shape.setStrokeStyle(1.5, 0x6be0ff, 0.8);
+    shape.setDepth(3);
+    const overlay = this.add.graphics();
+    overlay.setDepth(3.1);
+    overlay.lineStyle(1, 0x9aecff, 0.18);
+    for (let x = rect.x + 4; x < rect.x + rect.width; x += 10) {
+      overlay.lineBetween(x, rect.y + rect.height, x + 8, rect.y);
+    }
+    overlay.lineStyle(2, 0x6be0ff, 0.45);
+    overlay.lineBetween(rect.x, rect.y + 6, rect.x + 8, rect.y + 6);
+    overlay.lineBetween(rect.x, rect.y + 6, rect.x, rect.y + 14);
+    overlay.lineBetween(rect.x + rect.width - 8, rect.y + 6, rect.x + rect.width, rect.y + 6);
+    overlay.lineBetween(rect.x + rect.width, rect.y + 6, rect.x + rect.width, rect.y + 14);
+    overlay.lineBetween(rect.x, rect.y + rect.height - 6, rect.x + 8, rect.y + rect.height - 6);
+    overlay.lineBetween(rect.x, rect.y + rect.height - 6, rect.x, rect.y + rect.height - 14);
+    overlay.lineBetween(
+      rect.x + rect.width - 8,
+      rect.y + rect.height - 6,
+      rect.x + rect.width,
+      rect.y + rect.height - 6,
+    );
+    overlay.lineBetween(
+      rect.x + rect.width,
+      rect.y + rect.height - 6,
+      rect.x + rect.width,
+      rect.y + rect.height - 14,
+    );
+    this.roomObjects.push(shape, overlay);
+  }
+
+  private addShadowRect(
+    rect: Rect,
+    depth: number,
+    inflateX: number,
+    inflateY: number,
+    offsetY: number,
+    alpha: number,
+  ): Phaser.GameObjects.Rectangle {
+    const shadow = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2 + offsetY,
+      rect.width + inflateX,
+      rect.height + inflateY,
+      0x04070b,
+      alpha,
+    );
+    shadow.setDepth(depth);
+    this.roomObjects.push(shadow);
+    return shadow;
+  }
+
+  private decorateLabel(label: Phaser.GameObjects.Text): void {
+    label.setShadow(0, 1, "#04070b", 1, false, true);
+  }
+
   private loadRoom(): void {
     this.clearRoomObjects();
     const snapshot = this.session.getSnapshot();
@@ -398,7 +650,7 @@ export class GameScene extends Phaser.Scene {
 
     if (snapshot.room.terminal) {
       const terminal = snapshot.room.terminal;
-      const body = this.createTerminalBody(terminal.body);
+      this.createTerminalBody(terminal.body);
       const title = this.add.text(terminal.body.x + 6, terminal.body.y + 6, terminal.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "8px",
@@ -735,6 +987,7 @@ export class GameScene extends Phaser.Scene {
       const visible =
         drone.def.rule.kind !== "escort" ||
         this.session.getSnapshot().runtime.escortUnlocked;
+      drone.shadow.setVisible(visible);
       drone.sprite.setVisible(visible);
       drone.light.setVisible(visible);
       drone.range.setVisible(visible);
@@ -804,9 +1057,13 @@ export class GameScene extends Phaser.Scene {
     for (const item of this.itemObjects.values()) {
       if (this.carriedItemId === item.id) {
         item.sprite.setPosition(this.player.x, this.player.y - 14);
+        item.shadow.setPosition(this.player.x, this.player.y - 7);
         item.label.setPosition(item.sprite.x - 12, item.sprite.y + 10);
         item.sprite.setAlpha(1);
+        item.shadow.setAlpha(0.18);
       } else {
+        item.shadow.setPosition(item.sprite.x, item.sprite.y + 5);
+        item.shadow.setAlpha(0.35);
         item.sprite.setAlpha(0.95);
       }
     }
@@ -911,6 +1168,7 @@ export class GameScene extends Phaser.Scene {
     drone: RenderedDrone,
     position: { x: number; y: number },
   ): void {
+    drone.shadow.setPosition(position.x, position.y + 6);
     drone.sprite.setPosition(position.x, position.y);
     drone.light.setPosition(position.x, position.y);
     drone.range.setPosition(position.x, position.y);

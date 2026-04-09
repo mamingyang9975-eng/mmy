@@ -32,17 +32,21 @@ describe("samplePatrolPosition", () => {
 });
 
 describe("scanner room tuning", () => {
-  it("keeps scanner drones on short patrols with tighter vision radii", () => {
-    const scanners = ROOMS.flatMap((room) =>
-      room.drones.filter((drone) => drone.rule.kind === "scanner"),
-    );
+  it("keeps scanner drones on short patrols with a two-cell radius and escalating speeds", () => {
+    const scanners = ROOMS.map((room) =>
+      room.drones.find((drone) => drone.rule.kind === "scanner"),
+    ).filter((scanner) => scanner !== undefined);
 
-    expect(scanners.length).toBeGreaterThan(0);
+    expect(scanners.length).toBe(3);
 
     for (const scanner of scanners) {
       expect(scanner.patrol?.points.length ?? 0).toBeGreaterThanOrEqual(2);
-      expect(scanner.rule.visionRadius).toBeLessThanOrEqual(70);
+      expect(scanner.rule.visionRadius).toBe(48);
       expect(scanner.patrol?.points[0]).toEqual(scanner.position);
     }
+
+    const speeds = scanners.map((scanner) => scanner.patrol?.speed ?? 0);
+    expect(speeds[0]).toBeLessThan(speeds[1]);
+    expect(speeds[1]).toBeLessThan(speeds[2]);
   });
 });

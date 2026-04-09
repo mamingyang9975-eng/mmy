@@ -1,5 +1,7 @@
 import type { RoomDefinition } from "../simulation/types";
 
+const SCANNER_VISION_RADIUS = 48;
+
 export const ROOMS: RoomDefinition[] = [
   {
     id: "room-1",
@@ -23,10 +25,10 @@ export const ROOMS: RoomDefinition[] = [
         rule: {
           id: "scanner-a",
           kind: "scanner",
-          visionRadius: 70,
+          visionRadius: SCANNER_VISION_RADIUS,
         },
         patrol: {
-          speed: 24,
+          speed: 18,
           points: [
             { x: 126, y: 118 },
             { x: 166, y: 118 },
@@ -84,10 +86,10 @@ export const ROOMS: RoomDefinition[] = [
         rule: {
           id: "scanner-b",
           kind: "scanner",
-          visionRadius: 70,
+          visionRadius: SCANNER_VISION_RADIUS,
         },
         patrol: {
-          speed: 26,
+          speed: 24,
           points: [
             { x: 140, y: 106 },
             { x: 178, y: 106 },
@@ -181,10 +183,10 @@ export const ROOMS: RoomDefinition[] = [
         rule: {
           id: "scanner-c",
           kind: "scanner",
-          visionRadius: 66,
+          visionRadius: SCANNER_VISION_RADIUS,
         },
         patrol: {
-          speed: 22,
+          speed: 30,
           points: [
             { x: 74, y: 106 },
             { x: 112, y: 106 },
