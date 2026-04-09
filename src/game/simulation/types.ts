@@ -7,7 +7,7 @@ export type MovementMode = "normal" | "slow";
 
 export type TerminalMode = "none" | "maintenanceRequest" | "faultReport";
 
-export type DroneState = "Observe" | "Guide" | "Alert" | "Escort";
+export type DroneState = "Observe" | "Guide" | "Warn" | "Alert" | "Escort";
 
 export interface Vec2 {
   x: number;
@@ -84,11 +84,13 @@ export interface DroneRule {
   visionRadius: number;
   kind: "scanner" | "escort";
   escortSpawn?: Vec2;
+  requiresSlowGuide?: boolean;
 }
 
 export interface DronePatrol {
-  points: PathPoint[];
+  radius: number;
   speed: number;
+  lingerMs?: number;
 }
 
 export interface DroneDefinition {
@@ -180,7 +182,9 @@ export interface RoomRuntime {
   guideFieldPrimed: boolean;
   placedItems: Record<string, string | null>;
   escortUnlocked: boolean;
+  escortReleased: boolean;
   escortDistractedMs: number;
+  alertWarningMs: number;
   alertCountdownMs: number | null;
   triggeredIds: string[];
   message: string | null;

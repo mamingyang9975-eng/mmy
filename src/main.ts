@@ -27,8 +27,9 @@ new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   render: {
-    pixelArt: true,
-    antialias: false,
+    pixelArt: false,
+    antialias: true,
+    antialiasGL: true,
     roundPixels: true,
   },
   physics: {

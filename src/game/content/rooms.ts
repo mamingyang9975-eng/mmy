@@ -7,7 +7,7 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-1",
     name: "接入区 / 读懂系统",
     shortName: "房间 1",
-    hint: "先按 E 激活引导面板，再站定在感应区按住空格示意；之后在巡逻机范围内保持慢行。",
+    hint: "先按 E 激活引导面板，再站到感应区里按住 Space 停留两秒示意；之后在巡逻机范围内保持慢行。",
     signage: [
       "本设施不判断对错，仅减少表达歧义。",
       "访客接入前，请先启用引导面板。",
@@ -28,11 +28,9 @@ export const ROOMS: RoomDefinition[] = [
           visionRadius: SCANNER_VISION_RADIUS,
         },
         patrol: {
-          speed: 18,
-          points: [
-            { x: 126, y: 118 },
-            { x: 166, y: 118 },
-          ],
+          speed: 22,
+          radius: 22,
+          lingerMs: 1500,
         },
       },
     ],
@@ -87,13 +85,12 @@ export const ROOMS: RoomDefinition[] = [
           id: "scanner-b",
           kind: "scanner",
           visionRadius: SCANNER_VISION_RADIUS,
+          requiresSlowGuide: true,
         },
         patrol: {
           speed: 24,
-          points: [
-            { x: 140, y: 106 },
-            { x: 178, y: 106 },
-          ],
+          radius: 24,
+          lingerMs: 1500,
         },
       },
     ],
@@ -166,7 +163,7 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-3",
     name: "归档层 / 双重后果",
     shortName: "房间 3",
-    hint: "先借维修身份穿过第一道门，再站定在中段示意区按住空格，切回访客流后慢行通过出口。",
+    hint: "先借维修身份穿过第一道门，再站到中段示意区里按住 Space 停留两秒，切回访客流后慢行通过出口。",
     signage: ["维修流量默认护送。离线访客请重新示意。"],
     playerSpawn: { x: 44, y: 170 },
     wallRects: [
@@ -186,11 +183,9 @@ export const ROOMS: RoomDefinition[] = [
           visionRadius: SCANNER_VISION_RADIUS,
         },
         patrol: {
-          speed: 30,
-          points: [
-            { x: 74, y: 106 },
-            { x: 112, y: 106 },
-          ],
+          speed: 26,
+          radius: 26,
+          lingerMs: 1500,
         },
       },
       {

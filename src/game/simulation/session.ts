@@ -20,6 +20,7 @@ import type {
 } from "./types";
 
 const ALERT_RESET_MS = 5000;
+const ALERT_WARNING_MS = 1000;
 const ESCORT_DISTRACT_MS = 3200;
 
 function createRuntime(room: RoomDefinition): RoomRuntime {
@@ -30,7 +31,9 @@ function createRuntime(room: RoomDefinition): RoomRuntime {
     guideFieldPrimed: false,
     placedItems: Object.fromEntries(room.items.map((item) => [item.id, null])),
     escortUnlocked: false,
+    escortReleased: false,
     escortDistractedMs: 0,
+    alertWarningMs: 0,
     alertCountdownMs: null,
     triggeredIds: [],
     message: room.hint,
@@ -110,12 +113,36 @@ export class GameSession {
     this.runtime.guideMemory = interpretation.guideMemory;
     this.runtime.interpretation = interpretation.tag;
 
+    if (
+      !this.runtime.escortReleased &&
+      this.getRoom().id === "room-3" &&
+      this.runtime.escortUnlocked &&
+      interpretation.tag === "guidedVisitor"
+    ) {
+      this.runtime.escortReleased = true;
+      this.runtime.escortDistractedMs = 0;
+      this.runtime.message = "访客流量已恢复。护送机改回独立巡查。";
+    }
+
     const droneStates = this.getDroneStates(snapshot);
 
     if (Object.values(droneStates).includes("Alert")) {
-      this.triggerAlert();
-    } else if (!this.runtime.message) {
-      this.runtime.message = this.getRoom().hint;
+      const warningStates = this.updateAlertWarning(droneStates, deltaMs);
+      if (warningStates) {
+        return warningStates;
+      }
+    } else {
+      if (this.runtime.alertWarningMs > 0) {
+        this.runtime.message = this.getDefaultMessage();
+      }
+      this.runtime.alertWarningMs = 0;
+      if (!this.runtime.message) {
+        this.runtime.message = this.getDefaultMessage();
+      }
+    }
+
+    if (!this.runtime.message) {
+      this.runtime.message = this.getDefaultMessage();
     }
 
     return droneStates;
@@ -141,7 +168,7 @@ export class GameSession {
       this.runtime.terminalMode = "none";
       this.runtime.escortDistractedMs = ESCORT_DISTRACT_MS;
       this.runtime.message =
-        "护送机被检修台吸引。站定在中段示意区按住空格，即可切回访客流量。";
+        "护送机被检修台吸引。站到中段示意区里按住 Space 停留两秒，即可切回访客流量。";
       return this.runtime.terminalMode;
     }
 
@@ -168,7 +195,7 @@ export class GameSession {
     if (consoleDef.action === "primeGuidance") {
       this.runtime.guideFieldPrimed = true;
       this.runtime.message =
-        "引导面板已激活。现在站定在感应区按住空格示意，然后在巡逻机范围内慢行。";
+        "引导面板已激活。现在站到感应区里按住 Space 停留两秒示意，然后在巡逻机范围内慢行。";
     }
   }
 
@@ -194,7 +221,9 @@ export class GameSession {
       interpretation: this.runtime.interpretation,
       terminalMode: this.runtime.terminalMode,
       escortActive:
-        this.runtime.escortUnlocked && this.runtime.escortDistractedMs <= 0,
+        this.runtime.escortUnlocked &&
+        !this.runtime.escortReleased &&
+        this.runtime.escortDistractedMs <= 0,
       movementMode: approach?.movementMode,
       isInDroneRange: approach?.isInDroneRange,
     };
@@ -238,8 +267,47 @@ export class GameSession {
     if (this.runtime.alertCountdownMs !== null) {
       return;
     }
+    this.runtime.alertWarningMs = 0;
     this.runtime.alertCountdownMs = ALERT_RESET_MS;
     this.runtime.message = "已被标记为入侵者。";
+  }
+
+  private updateAlertWarning(
+    droneStates: Record<string, DroneState>,
+    deltaMs: number,
+  ): Record<string, DroneState> | null {
+    if (this.runtime.alertWarningMs === 0) {
+      this.runtime.alertWarningMs = ALERT_WARNING_MS;
+    } else {
+      this.runtime.alertWarningMs = Math.max(
+        0,
+        this.runtime.alertWarningMs - deltaMs,
+      );
+    }
+
+    if (this.runtime.alertWarningMs === 0) {
+      this.triggerAlert();
+      return null;
+    }
+
+    this.runtime.message = "巡逻机正在锁定你，立刻慢行或脱离范围。";
+
+    return Object.fromEntries(
+      Object.entries(droneStates).map(([id, state]) => [
+        id,
+        state === "Alert" ? "Warn" : state,
+      ]),
+    ) as Record<string, DroneState>;
+  }
+
+  private getDefaultMessage(): string {
+    if (this.runtime.terminalMode === "maintenanceRequest") {
+      return "系统已把你登记为维修流量。";
+    }
+    if (this.runtime.guideFieldPrimed) {
+      return "引导面板已激活。现在站到感应区里按住 Space 停留两秒示意，然后在巡逻机范围内慢行。";
+    }
+    return this.getRoom().hint;
   }
 
   private getDroneStates(
@@ -256,7 +324,8 @@ export class GameSession {
         playerVisible: snapshot.visibleDroneIds.includes(drone.id),
         isOnTrustedRoute: snapshot.isOnTrustedRoute,
         terminalMode: this.runtime.terminalMode,
-        escortActive: this.runtime.escortUnlocked,
+        escortActive:
+          this.runtime.escortUnlocked && !this.runtime.escortReleased,
         escortDistracted: this.runtime.escortDistractedMs > 0,
       };
       states[drone.id] = evaluateDroneState(drone.rule, context);

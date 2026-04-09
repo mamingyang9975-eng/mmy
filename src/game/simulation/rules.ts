@@ -45,7 +45,6 @@ export function advanceInterpretation(
 
   if (
     remainingMs > 0 &&
-    snapshot.isInGuideRange &&
     snapshot.movementMode === "slow"
   ) {
     return {
@@ -75,6 +74,11 @@ export function evaluateDroneState(
   rule: DroneRule,
   context: DroneContext,
 ): DroneState {
+  const requiresSlowGuide =
+    rule.kind === "scanner" &&
+    rule.requiresSlowGuide &&
+    context.interpretation === "maintenanceCandidate";
+
   if (!context.playerVisible) {
     return "Observe";
   }
@@ -83,20 +87,21 @@ export function evaluateDroneState(
     return "Alert";
   }
 
-  if (rule.kind === "escort" && context.escortActive) {
-    if (context.escortDistracted) {
-      return "Observe";
-    }
-    if (context.terminalMode === "maintenanceRequest") {
-      return "Escort";
-    }
-    if (context.interpretation === "guidedVisitor") {
+  if (rule.kind === "escort") {
+    if (
+      !context.escortActive ||
+      context.escortDistracted ||
+      context.interpretation === "guidedVisitor"
+    ) {
       return "Observe";
     }
     return "Escort";
   }
 
-  if (context.interpretation === "maintenanceCandidate") {
+  if (
+    context.interpretation === "maintenanceCandidate" &&
+    (!requiresSlowGuide || context.movementMode === "slow")
+  ) {
     return "Guide";
   }
 

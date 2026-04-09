@@ -1,33 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { ROOMS } from "../src/game/content/rooms";
-import { samplePatrolPosition } from "../src/game/simulation/patrol";
+import {
+  createPatrolTarget,
+  hasReachedTarget,
+  moveTowardTarget,
+} from "../src/game/simulation/patrol";
 
-describe("samplePatrolPosition", () => {
-  it("moves along the route and ping-pongs back to the start", () => {
+describe("patrol helpers", () => {
+  it("creates wander targets inside the configured radius", () => {
     const patrol = {
       speed: 20,
-      points: [
-        { x: 10, y: 10 },
-        { x: 30, y: 10 },
-      ],
+      radius: 24,
     };
+    const origin = { x: 10, y: 10 };
 
-    expect(samplePatrolPosition(patrol.points[0], patrol, 0)).toEqual({
+    expect(createPatrolTarget(origin, patrol, 0, 1)).toEqual({
+      x: 34,
+      y: 10,
+    });
+    expect(createPatrolTarget(origin, patrol, Math.PI / 2, 0.5)).toEqual({
       x: 10,
-      y: 10,
+      y: 22,
     });
-    expect(samplePatrolPosition(patrol.points[0], patrol, 500)).toEqual({
-      x: 20,
-      y: 10,
-    });
-    expect(samplePatrolPosition(patrol.points[0], patrol, 1000)).toEqual({
-      x: 30,
-      y: 10,
-    });
-    expect(samplePatrolPosition(patrol.points[0], patrol, 1500)).toEqual({
-      x: 20,
-      y: 10,
-    });
+  });
+
+  it("moves toward targets without overshooting and reports arrival", () => {
+    const advanced = moveTowardTarget(
+      { x: 10, y: 10 },
+      { x: 22, y: 10 },
+      12,
+      500,
+    );
+
+    expect(advanced).toEqual({ x: 16, y: 10 });
+    expect(hasReachedTarget(advanced, { x: 22, y: 10 })).toBe(false);
+    expect(
+      moveTowardTarget({ x: 20, y: 10 }, { x: 22, y: 10 }, 12, 500),
+    ).toEqual({ x: 22, y: 10 });
+    expect(hasReachedTarget({ x: 22, y: 10 }, { x: 22, y: 10 })).toBe(true);
   });
 });
 
@@ -40,9 +50,11 @@ describe("scanner room tuning", () => {
     expect(scanners.length).toBe(3);
 
     for (const scanner of scanners) {
-      expect(scanner.patrol?.points.length ?? 0).toBeGreaterThanOrEqual(2);
       expect(scanner.rule.visionRadius).toBe(48);
-      expect(scanner.patrol?.points[0]).toEqual(scanner.position);
+      expect(scanner.patrol?.radius).toBeGreaterThanOrEqual(22);
+      expect(scanner.patrol?.radius).toBeLessThanOrEqual(26);
+      expect(scanner.patrol?.lingerMs).toBe(1500);
+      expect(scanner.patrol?.speed).toBe(scanner.patrol?.radius);
     }
 
     const speeds = scanners.map((scanner) => scanner.patrol?.speed ?? 0);

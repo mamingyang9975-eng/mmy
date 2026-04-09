@@ -1,66 +1,64 @@
 import type { DronePatrol, Vec2 } from "./types";
 
-export function samplePatrolPosition(
+export function createPatrolTarget(
   origin: Vec2,
   patrol: DronePatrol | undefined,
-  elapsedMs: number,
+  angleRadians: number,
+  distanceFactor: number,
 ): Vec2 {
-  if (!patrol || patrol.points.length < 2 || patrol.speed <= 0) {
+  if (!patrol || patrol.radius <= 0) {
     return origin;
   }
 
-  const pathLength = getPathLength(patrol.points);
-  if (pathLength === 0) {
-    return patrol.points[0] ?? origin;
-  }
-
-  const travelled = (elapsedMs / 1000) * patrol.speed;
-  const cycleLength = pathLength * 2;
-  let pathDistance = travelled % cycleLength;
-
-  if (pathDistance > pathLength) {
-    pathDistance = cycleLength - pathDistance;
-  }
-
-  return getPointAtDistance(patrol.points, pathDistance);
+  const radius = patrol.radius * clamp(distanceFactor, 0.45, 1);
+  return {
+    x: origin.x + Math.cos(angleRadians) * radius,
+    y: origin.y + Math.sin(angleRadians) * radius,
+  };
 }
 
-function getPathLength(points: Vec2[]): number {
-  let total = 0;
-
-  for (let index = 1; index < points.length; index += 1) {
-    total += distance(points[index - 1], points[index]);
+export function moveTowardTarget(
+  current: Vec2,
+  target: Vec2,
+  speed: number,
+  deltaMs: number,
+): Vec2 {
+  if (speed <= 0 || deltaMs <= 0) {
+    return current;
   }
 
-  return total;
+  const dx = target.x - current.x;
+  const dy = target.y - current.y;
+  const remaining = Math.hypot(dx, dy);
+
+  if (remaining === 0) {
+    return target;
+  }
+
+  const maxStep = (speed * deltaMs) / 1000;
+  if (maxStep >= remaining) {
+    return target;
+  }
+
+  const t = maxStep / remaining;
+  return {
+    x: current.x + dx * t,
+    y: current.y + dy * t,
+  };
 }
 
-function getPointAtDistance(points: Vec2[], targetDistance: number): Vec2 {
-  let remaining = targetDistance;
-
-  for (let index = 1; index < points.length; index += 1) {
-    const start = points[index - 1];
-    const end = points[index];
-    const segmentLength = distance(start, end);
-
-    if (segmentLength === 0) {
-      continue;
-    }
-
-    if (remaining <= segmentLength) {
-      const t = remaining / segmentLength;
-      return {
-        x: start.x + (end.x - start.x) * t,
-        y: start.y + (end.y - start.y) * t,
-      };
-    }
-
-    remaining -= segmentLength;
-  }
-
-  return points[points.length - 1];
+export function hasReachedTarget(
+  current: Vec2,
+  target: Vec2,
+  threshold = 3,
+): boolean {
+  return distance(current, target) <= threshold;
 }
 
 function distance(a: Vec2, b: Vec2): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

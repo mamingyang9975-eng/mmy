@@ -8,7 +8,11 @@ import {
   rectContains,
 } from "../../game/simulation/geometry";
 import { canAdvanceThroughDoor } from "../../game/simulation/exits";
-import { samplePatrolPosition } from "../../game/simulation/patrol";
+import {
+  createPatrolTarget,
+  hasReachedTarget,
+  moveTowardTarget,
+} from "../../game/simulation/patrol";
 import { getSpeedLimit } from "../../game/simulation/rules";
 import { GameSession } from "../../game/simulation/session";
 import type {
@@ -28,8 +32,8 @@ const ROOM_WIDTH = 384;
 const ROOM_HEIGHT = 216;
 const CAMERA_ZOOM = 3;
 const INTERACT_RANGE = 20;
-const INDICATE_MS = 1000;
 const EXIT_GRACE_MS = 220;
+const INDICATE_HOLD_MS = 2000;
 
 type KeyMap = {
   up: Phaser.Input.Keyboard.Key;
@@ -86,6 +90,21 @@ interface RenderedConsole {
   label: Phaser.GameObjects.Text;
 }
 
+interface RenderedSignalZone {
+  id: string;
+  rect: Rect;
+  shape: Phaser.GameObjects.Rectangle;
+  overlay: Phaser.GameObjects.Graphics;
+  reticle: Phaser.GameObjects.Graphics;
+}
+
+interface ScannerPatrolRuntime {
+  lingerMs: number;
+  angleRadians: number;
+  directionSign: 1 | -1;
+  target: { x: number; y: number };
+}
+
 export class GameScene extends Phaser.Scene {
   private session = new GameSession();
   private ui = getUiController();
@@ -102,11 +121,13 @@ export class GameScene extends Phaser.Scene {
   private itemObjects = new Map<string, RenderedItem>();
   private slotObjects = new Map<string, RenderedSlot>();
   private consoleObjects = new Map<string, RenderedConsole>();
+  private signalZoneObjects = new Map<string, RenderedSignalZone>();
+  private scannerPatrolStates = new Map<string, ScannerPatrolRuntime>();
   private roomRef = this.session.getSnapshot().runtime;
   private currentRoom = ROOMS[0];
   private carriedItemId: string | null = null;
   private indicateChargeMs = 0;
-  private roomMotionElapsedMs = 0;
+  private indicateZoneId: string | null = null;
 
   constructor() {
     super("game");
@@ -161,20 +182,21 @@ export class GameScene extends Phaser.Scene {
     if (controlsLocked) {
       body.setVelocity(0, 0);
       this.indicateChargeMs = 0;
+      this.indicateZoneId = null;
     } else {
       body.setVelocity(velocity.x * speedLimit, velocity.y * speedLimit);
-      this.roomMotionElapsedMs += delta;
     }
 
-    this.updateScannerMotion();
+    this.updateScannerMotion(controlsLocked ? 0 : delta);
 
     const playerPos = { x: this.player.x, y: this.player.y };
+    const activeSignalZone = room.signalZones.find((zone) =>
+      rectContains(zone.rect, playerPos),
+    );
     const droneVisibility = room.drones
       .filter((drone) => this.isDroneVisible(drone))
       .map((drone) => drone.id);
-    const isInSignalZone = room.signalZones.some((zone) =>
-      rectContains(zone.rect, playerPos),
-    );
+    const isInSignalZone = activeSignalZone !== undefined;
     const isOnMaintenancePath = this.getActiveGuidePaths(room, runtime.terminalMode)
       .some((path) => distanceToPolyline(playerPos, path.points) <= path.tolerance);
     const signalEnabled =
@@ -183,22 +205,36 @@ export class GameScene extends Phaser.Scene {
       runtime.guideMemory.remainingMs > 0 && droneVisibility.length > 0;
     const isOnTrustedRoute = isOnMaintenancePath || isInGuideRange;
 
-    const canCharge =
+    const canChargeIndication =
       !controlsLocked &&
       this.keys.indicate.isDown &&
       isInSignalZone &&
       signalEnabled &&
       body.velocity.length() < 10;
-    this.indicateChargeMs = canCharge
-      ? Math.min(INDICATE_MS, this.indicateChargeMs + delta)
-      : 0;
-    this.renderIndicateRing(this.indicateChargeMs / INDICATE_MS);
+
+    if (!canChargeIndication) {
+      this.indicateChargeMs = 0;
+      this.indicateZoneId = null;
+    } else {
+      if (this.indicateZoneId !== activeSignalZone?.id) {
+        this.indicateChargeMs = 0;
+        this.indicateZoneId = activeSignalZone?.id ?? null;
+      }
+      this.indicateChargeMs = Math.min(
+        INDICATE_HOLD_MS,
+        this.indicateChargeMs + delta,
+      );
+    }
+
+    const indicateProgress = this.indicateChargeMs / INDICATE_HOLD_MS;
+    const isIndicating = indicateProgress >= 1;
+    this.renderIndicateRing(indicateProgress);
 
     const droneStates = this.session.updateIntent(
       {
         movementMode,
         speed: body.velocity.length(),
-        isIndicating: this.indicateChargeMs >= INDICATE_MS,
+        isIndicating,
         isInSignalZone,
         isInGuideRange,
         isOnTrustedRoute,
@@ -217,6 +253,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.syncDroneStates(droneStates);
     this.syncConsoles();
+    this.syncSignalZones(
+      activeSignalZone?.id ?? null,
+      indicateProgress,
+      signalEnabled,
+    );
     this.syncGuidePaths();
     this.syncItems();
     this.processInteractions();
@@ -306,26 +347,59 @@ export class GameScene extends Phaser.Scene {
 
   private createBackdrop(): void {
     const bg = this.add.graphics();
-    bg.fillGradientStyle(0x10161f, 0x10161f, 0x090c11, 0x090c11, 1);
+    bg.fillGradientStyle(0x121a25, 0x121a25, 0x090c11, 0x090c11, 1);
     bg.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
-    bg.fillStyle(0x16304a, 0.08);
-    bg.fillEllipse(ROOM_WIDTH * 0.28, ROOM_HEIGHT * 0.22, 130, 78);
-    bg.fillStyle(0xf3b65b, 0.04);
-    bg.fillEllipse(ROOM_WIDTH * 0.78, ROOM_HEIGHT * 0.7, 168, 112);
-    bg.fillStyle(0x111926, 0.88);
+    bg.fillStyle(0x1c3b57, 0.12);
+    bg.fillEllipse(ROOM_WIDTH * 0.22, ROOM_HEIGHT * 0.18, 154, 92);
+    bg.fillStyle(0xf0b35c, 0.07);
+    bg.fillEllipse(ROOM_WIDTH * 0.8, ROOM_HEIGHT * 0.72, 176, 118);
+    bg.fillStyle(0x0f1621, 0.9);
     bg.fillRoundedRect(8, 8, ROOM_WIDTH - 16, ROOM_HEIGHT - 16, 14);
-    bg.lineStyle(1, 0x233042, 0.9);
+    bg.fillStyle(0x141d29, 0.72);
+    bg.fillRoundedRect(18, 16, 162, 54, 12);
+    bg.lineStyle(2, 0x253448, 0.92);
     bg.strokeRoundedRect(8, 8, ROOM_WIDTH - 16, ROOM_HEIGHT - 16, 14);
-    bg.lineStyle(1, 0x18212c, 0.85);
+    bg.lineStyle(1, 0x324863, 0.24);
+    bg.strokeRoundedRect(18, 16, 162, 54, 12);
+    bg.lineStyle(1, 0x18212c, 0.88);
     for (let x = 0; x <= ROOM_WIDTH; x += 24) {
       bg.lineBetween(x, 0, x, ROOM_HEIGHT);
     }
     for (let y = 0; y <= ROOM_HEIGHT; y += 24) {
       bg.lineBetween(0, y, ROOM_WIDTH, y);
     }
-    bg.lineStyle(1, 0x26425c, 0.18);
-    bg.lineBetween(16, 22, ROOM_WIDTH - 16, 22);
-    bg.lineBetween(16, ROOM_HEIGHT - 22, ROOM_WIDTH - 16, ROOM_HEIGHT - 22);
+    bg.lineStyle(2, 0x122031, 0.64);
+    bg.lineBetween(20, 30, ROOM_WIDTH - 20, 30);
+    bg.lineBetween(20, ROOM_HEIGHT - 26, ROOM_WIDTH - 20, ROOM_HEIGHT - 26);
+    bg.lineStyle(1, 0x27435e, 0.2);
+    bg.lineBetween(18, 22, ROOM_WIDTH - 18, 22);
+    bg.lineBetween(18, ROOM_HEIGHT - 22, ROOM_WIDTH - 18, ROOM_HEIGHT - 22);
+
+    bg.fillStyle(0x101823, 0.72);
+    bg.fillRoundedRect(20, ROOM_HEIGHT - 36, 58, 14, 4);
+    bg.fillRoundedRect(ROOM_WIDTH - 92, 20, 54, 14, 4);
+    bg.fillStyle(0x6be2ff, 0.12);
+    bg.fillRect(24, ROOM_HEIGHT - 31, 50, 1);
+    bg.fillStyle(0xf0b35c, 0.1);
+    bg.fillRect(ROOM_WIDTH - 88, 25, 46, 1);
+
+    const deco = this.add.graphics();
+    deco.setDepth(0.5);
+    deco.lineStyle(1, 0x304559, 0.34);
+    deco.strokeRoundedRect(26, 146, 46, 16, 4);
+    deco.strokeRoundedRect(ROOM_WIDTH - 84, 122, 42, 18, 4);
+    deco.lineStyle(1, 0x46627e, 0.18);
+    for (let x = 30; x <= 64; x += 6) {
+      deco.lineBetween(x, 150, x, 158);
+    }
+    for (let x = ROOM_WIDTH - 80; x <= ROOM_WIDTH - 48; x += 6) {
+      deco.lineBetween(x, 126, x, 136);
+    }
+    deco.lineStyle(1, 0x345067, 0.28);
+    deco.lineBetween(20, 72, 112, 72);
+    deco.lineBetween(272, ROOM_HEIGHT - 44, 350, ROOM_HEIGHT - 44);
+    deco.strokeCircle(28, 30, 2);
+    deco.strokeCircle(ROOM_WIDTH - 28, ROOM_HEIGHT - 28, 2);
   }
 
   private createPlayer(): void {
@@ -346,11 +420,15 @@ export class GameScene extends Phaser.Scene {
     this.guideGraphics.setDepth(2);
     this.roomTitle = this.add.text(12, 12, "", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-      fontSize: "12px",
-      color: "#dce6f7",
+      fontSize: "14px",
+      fontStyle: "600",
+      color: "#eef4ff",
+      stroke: "#091018",
+      strokeThickness: 2,
       resolution: CAMERA_ZOOM,
     });
     this.roomTitle.setDepth(10);
+    this.roomTitle.setShadow(0, 2, "#04070b", 1, false, true);
   }
 
   private createWallBlock(rect: Rect): Phaser.GameObjects.Rectangle {
@@ -393,7 +471,21 @@ export class GameScene extends Phaser.Scene {
         rect.y + rect.height - 4,
       );
     }
-    this.roomObjects.push(shape, core, trim);
+    const bolts = this.add.graphics();
+    bolts.setDepth(6.12);
+    bolts.fillStyle(0x8ea0b4, 0.3);
+    const boltPoints =
+      rect.height >= rect.width
+        ? [
+            [rect.x + rect.width / 2, rect.y + 10],
+            [rect.x + rect.width / 2, rect.y + rect.height - 10],
+          ]
+        : [
+            [rect.x + 10, rect.y + rect.height / 2],
+            [rect.x + rect.width - 10, rect.y + rect.height / 2],
+          ];
+    boltPoints.forEach(([x, y]) => bolts.fillCircle(x, y, 1.2));
+    this.roomObjects.push(shape, core, trim, bolts);
     return shape;
   }
 
@@ -436,7 +528,16 @@ export class GameScene extends Phaser.Scene {
       0.5,
     );
     core.setDepth(7.05);
-    this.roomObjects.push(frame, shape, core, slit);
+    const accents = this.add.graphics();
+    accents.setDepth(7.12);
+    accents.lineStyle(1, 0xefcf69, 0.18);
+    for (let y = rect.y + 7; y <= rect.y + rect.height - 7; y += 6) {
+      accents.lineBetween(rect.x - 2, y, rect.x + 3, y + 2);
+      accents.lineBetween(rect.x + rect.width - 3, y + 2, rect.x + rect.width + 2, y);
+    }
+    accents.fillStyle(0xefcf69, 0.52);
+    accents.fillCircle(rect.x + rect.width - 4, rect.y + 6, 1.6);
+    this.roomObjects.push(frame, shape, core, slit, accents);
     return shape;
   }
 
@@ -475,7 +576,27 @@ export class GameScene extends Phaser.Scene {
     for (let y = rect.y + 20; y < rect.y + rect.height - 8; y += 8) {
       scan.lineBetween(rect.x + 7, y, rect.x + rect.width - 7, y);
     }
-    this.roomObjects.push(body, inner, header, scan);
+    const display = this.add.rectangle(
+      rect.x + rect.width - 16,
+      rect.y + 10,
+      12,
+      4,
+      0x84ecff,
+      0.32,
+    );
+    display.setDepth(5.14);
+    const vent = this.add.graphics();
+    vent.setDepth(5.13);
+    vent.lineStyle(1, 0x90a1b5, 0.16);
+    for (let x = rect.x + 10; x < rect.x + rect.width - 10; x += 8) {
+      vent.lineBetween(x, rect.y + rect.height - 12, x + 4, rect.y + rect.height - 12);
+    }
+    const ports = this.add.graphics();
+    ports.setDepth(5.15);
+    ports.fillStyle(0x5a6a7e, 0.34);
+    ports.fillCircle(rect.x + 10, rect.y + rect.height - 10, 1.2);
+    ports.fillCircle(rect.x + 16, rect.y + rect.height - 10, 1.2);
+    this.roomObjects.push(body, inner, header, scan, display, vent, ports);
     return body;
   }
 
@@ -519,26 +640,37 @@ export class GameScene extends Phaser.Scene {
       rect.y + rect.height / 2,
       rect.width,
       rect.height,
-      0x223746,
+      0x423224,
     );
-    shape.setStrokeStyle(1.5, 0x6be2ff, 0.95);
+    shape.setStrokeStyle(1.5, 0xf3b65b, 0.95);
     shape.setDepth(6);
     const inner = this.add.rectangle(
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
       Math.max(4, rect.width - 6),
       Math.max(4, rect.height - 6),
-      0x162631,
+      0x281c12,
       0.95,
     );
     inner.setDepth(6.05);
-    const diode = this.add.circle(rect.x + rect.width / 2, rect.y + rect.height / 2, 2, 0x84f0ff, 0.75);
+    const diode = this.add.circle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      2,
+      0xffd591,
+      0.78,
+    );
     diode.setDepth(6.1);
-    this.roomObjects.push(shape, inner, diode);
+    const trim = this.add.graphics();
+    trim.setDepth(6.12);
+    trim.lineStyle(1, 0xf7c978, 0.2);
+    trim.strokeRoundedRect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4, 3);
+    trim.lineBetween(rect.x + 4, rect.y + rect.height - 4, rect.x + rect.width - 4, rect.y + rect.height - 4);
+    this.roomObjects.push(shape, inner, diode, trim);
     return shape;
   }
 
-  private createSignalZone(rect: Rect): void {
+  private createSignalZone(id: string, rect: Rect): void {
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
@@ -574,7 +706,24 @@ export class GameScene extends Phaser.Scene {
       rect.x + rect.width,
       rect.y + rect.height - 14,
     );
-    this.roomObjects.push(shape, overlay);
+    const reticle = this.add.graphics();
+    reticle.setDepth(3.15);
+    reticle.lineStyle(1, 0x9aecff, 0.3);
+    reticle.strokeCircle(rect.x + rect.width / 2, rect.y + rect.height / 2, 4);
+    reticle.lineBetween(
+      rect.x + rect.width / 2 - 6,
+      rect.y + rect.height / 2,
+      rect.x + rect.width / 2 + 6,
+      rect.y + rect.height / 2,
+    );
+    this.roomObjects.push(shape, overlay, reticle);
+    this.signalZoneObjects.set(id, {
+      id,
+      rect,
+      shape,
+      overlay,
+      reticle,
+    });
   }
 
   private addShadowRect(
@@ -599,6 +748,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private decorateLabel(label: Phaser.GameObjects.Text): void {
+    label.setStroke("#081019", 2);
     label.setShadow(0, 1, "#04070b", 1, false, true);
   }
 
@@ -609,7 +759,7 @@ export class GameScene extends Phaser.Scene {
     this.roomRef = snapshot.runtime;
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
-    this.roomMotionElapsedMs = 0;
+    this.indicateZoneId = null;
     this.player.setPosition(snapshot.room.playerSpawn.x, snapshot.room.playerSpawn.y);
     this.player.setVelocity(0, 0);
     this.roomTitle.setText(snapshot.room.name);
@@ -630,8 +780,9 @@ export class GameScene extends Phaser.Scene {
 
       const label = this.add.text(door.rect.x - 6, door.rect.y - 16, door.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-        fontSize: "8px",
-        color: "#a5b7c8",
+        fontSize: "9px",
+        fontStyle: "600",
+        color: "#b8c6d4",
         resolution: CAMERA_ZOOM,
       });
       label.setDepth(8);
@@ -653,8 +804,9 @@ export class GameScene extends Phaser.Scene {
       this.createTerminalBody(terminal.body);
       const title = this.add.text(terminal.body.x + 6, terminal.body.y + 6, terminal.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-        fontSize: "8px",
-        color: "#c6d3e0",
+        fontSize: "9px",
+        fontStyle: "600",
+        color: "#d5deea",
         resolution: CAMERA_ZOOM,
       });
       title.setDepth(8);
@@ -667,8 +819,8 @@ export class GameScene extends Phaser.Scene {
         const slotShape = this.createSlotBlock(slot.rect, accent);
         const label = this.add.text(slot.rect.x - 4, slot.rect.y + slot.rect.height + 4, slot.label, {
           fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-          fontSize: "7px",
-          color: "#8ea0b2",
+          fontSize: "8px",
+          color: "#9fb1c2",
           resolution: CAMERA_ZOOM,
         });
         label.setDepth(8);
@@ -687,8 +839,9 @@ export class GameScene extends Phaser.Scene {
           consoleDef.label,
           {
             fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-            fontSize: "7px",
-            color: "#8fdff3",
+            fontSize: "8px",
+            fontStyle: "600",
+            color: "#f4c783",
             resolution: CAMERA_ZOOM,
           },
         );
@@ -710,8 +863,8 @@ export class GameScene extends Phaser.Scene {
       sprite.setDepth(12);
       const label = this.add.text(item.position.x - 12, item.position.y + 12, item.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-        fontSize: "7px",
-        color: "#f4d996",
+        fontSize: "8px",
+        color: "#f6deaa",
         resolution: CAMERA_ZOOM,
       });
       label.setDepth(12);
@@ -727,14 +880,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const zone of snapshot.room.signalZones) {
-      this.createSignalZone(zone.rect);
+      this.createSignalZone(zone.id, zone.rect);
     }
 
     snapshot.room.signage.forEach((text, index) => {
       const sign = this.add.text(18, 28 + index * 12, text, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-        fontSize: "8px",
-        color: "#6f8193",
+        fontSize: "9px",
+        color: "#7e93aa",
         resolution: CAMERA_ZOOM,
       });
       sign.setDepth(4);
@@ -760,8 +913,8 @@ export class GameScene extends Phaser.Scene {
       range.setDepth(1);
       const label = this.add.text(drone.position.x - 14, drone.position.y + 12, drone.label, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
-        fontSize: "7px",
-        color: "#9ab0c3",
+        fontSize: "8px",
+        color: "#b0c1d2",
         resolution: CAMERA_ZOOM,
       });
       label.setDepth(15);
@@ -783,10 +936,24 @@ export class GameScene extends Phaser.Scene {
         label,
         state: "Observe",
       });
+      if (drone.rule.kind === "scanner" && drone.patrol) {
+        const angleRadians = Phaser.Math.FloatBetween(0, Math.PI * 2);
+        this.scannerPatrolStates.set(drone.id, {
+          lingerMs: 0,
+          angleRadians,
+          directionSign: 1,
+          target: this.pickScannerPatrolTarget(drone, angleRadians, 1),
+        });
+      }
     }
 
     this.syncDoorStates(0);
     this.syncConsoles();
+    this.syncSignalZones(
+      null,
+      0,
+      !snapshot.room.signalRequiresActivation || snapshot.runtime.guideFieldPrimed,
+    );
     this.syncGuidePaths();
     this.syncHud();
   }
@@ -799,9 +966,11 @@ export class GameScene extends Phaser.Scene {
     this.wallBodies = [];
     this.doorObjects.clear();
     this.droneObjects.clear();
+    this.scannerPatrolStates.clear();
     this.itemObjects.clear();
     this.slotObjects.clear();
     this.consoleObjects.clear();
+    this.signalZoneObjects.clear();
     for (const object of this.roomObjects) {
       object.destroy();
     }
@@ -1005,15 +1174,102 @@ export class GameScene extends Phaser.Scene {
     for (const consoleObject of this.consoleObjects.values()) {
       const active = runtime.guideFieldPrimed;
       consoleObject.shape.setFillStyle(
-        active ? 0x325565 : 0x20343f,
+        active ? 0x6a4b2d : 0x423224,
         active ? 0.95 : 0.85,
       );
       consoleObject.shape.setStrokeStyle(
         1.5,
-        active ? 0x98f0ff : 0x6be2ff,
+        active ? 0xffda9b : 0xf3b65b,
         0.95,
       );
-      consoleObject.label.setColor(active ? "#d7fbff" : "#8fdff3");
+      consoleObject.label.setColor(active ? "#fff1c9" : "#f4c783");
+    }
+  }
+
+  private syncSignalZones(
+    activeZoneId: string | null,
+    indicateProgress: number,
+    signalEnabled: boolean,
+  ): void {
+    for (const zone of this.signalZoneObjects.values()) {
+      const progress = zone.id === activeZoneId ? indicateProgress : 0;
+      const accent = signalEnabled
+        ? this.mixColorHex(0x6be0ff, 0x7df2bc, progress)
+        : 0x4f6b7a;
+      const fillAlpha = signalEnabled
+        ? 0.16 + progress * 0.16
+        : 0.08;
+      const strokeAlpha = signalEnabled
+        ? 0.78 + progress * 0.14
+        : 0.24;
+
+      zone.shape.setFillStyle(accent, fillAlpha);
+      zone.shape.setStrokeStyle(1.5, accent, strokeAlpha);
+
+      zone.overlay.clear();
+      zone.overlay.lineStyle(1, accent, signalEnabled ? 0.18 + progress * 0.18 : 0.08);
+      for (let x = zone.rect.x + 4; x < zone.rect.x + zone.rect.width; x += 10) {
+        zone.overlay.lineBetween(x, zone.rect.y + zone.rect.height, x + 8, zone.rect.y);
+      }
+      zone.overlay.lineStyle(2, accent, signalEnabled ? 0.42 + progress * 0.28 : 0.14);
+      zone.overlay.lineBetween(zone.rect.x, zone.rect.y + 6, zone.rect.x + 8, zone.rect.y + 6);
+      zone.overlay.lineBetween(zone.rect.x, zone.rect.y + 6, zone.rect.x, zone.rect.y + 14);
+      zone.overlay.lineBetween(
+        zone.rect.x + zone.rect.width - 8,
+        zone.rect.y + 6,
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + 6,
+      );
+      zone.overlay.lineBetween(
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + 6,
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + 14,
+      );
+      zone.overlay.lineBetween(
+        zone.rect.x,
+        zone.rect.y + zone.rect.height - 6,
+        zone.rect.x + 8,
+        zone.rect.y + zone.rect.height - 6,
+      );
+      zone.overlay.lineBetween(
+        zone.rect.x,
+        zone.rect.y + zone.rect.height - 6,
+        zone.rect.x,
+        zone.rect.y + zone.rect.height - 14,
+      );
+      zone.overlay.lineBetween(
+        zone.rect.x + zone.rect.width - 8,
+        zone.rect.y + zone.rect.height - 6,
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + zone.rect.height - 6,
+      );
+      zone.overlay.lineBetween(
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + zone.rect.height - 6,
+        zone.rect.x + zone.rect.width,
+        zone.rect.y + zone.rect.height - 14,
+      );
+
+      zone.reticle.clear();
+      zone.reticle.lineStyle(1, accent, signalEnabled ? 0.24 + progress * 0.32 : 0.12);
+      zone.reticle.strokeCircle(
+        zone.rect.x + zone.rect.width / 2,
+        zone.rect.y + zone.rect.height / 2,
+        4 + progress,
+      );
+      zone.reticle.lineBetween(
+        zone.rect.x + zone.rect.width / 2 - 6,
+        zone.rect.y + zone.rect.height / 2,
+        zone.rect.x + zone.rect.width / 2 + 6,
+        zone.rect.y + zone.rect.height / 2,
+      );
+      zone.reticle.lineBetween(
+        zone.rect.x + zone.rect.width / 2,
+        zone.rect.y + zone.rect.height / 2 - 6,
+        zone.rect.x + zone.rect.width / 2,
+        zone.rect.y + zone.rect.height / 2 + 6,
+      );
     }
   }
 
@@ -1113,7 +1369,23 @@ export class GameScene extends Phaser.Scene {
     this.indicateRing.setVisible(true);
     this.indicateRing.setPosition(this.player.x, this.player.y);
     this.indicateRing.setRadius(8 + progress * 5);
-    this.indicateRing.setStrokeStyle(2, 0x6be2ff, 0.4 + progress * 0.5);
+    this.indicateRing.setStrokeStyle(
+      2,
+      this.mixColorHex(0x6be2ff, 0x7df2bc, progress),
+      0.4 + progress * 0.5,
+    );
+  }
+
+  private mixColorHex(from: number, to: number, progress: number): number {
+    const start = Phaser.Display.Color.IntegerToRGB(from);
+    const end = Phaser.Display.Color.IntegerToRGB(to);
+    const value = Phaser.Math.Clamp(progress, 0, 1);
+
+    return Phaser.Display.Color.GetColor(
+      Math.round(Phaser.Math.Linear(start.r, end.r, value)),
+      Math.round(Phaser.Math.Linear(start.g, end.g, value)),
+      Math.round(Phaser.Math.Linear(start.b, end.b, value)),
+    );
   }
 
   private isDroneVisible(drone: DroneDefinition): boolean {
@@ -1136,9 +1408,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     const runtime = this.session.getSnapshot().runtime;
-    const target = runtime.escortDistractedMs > 0
-      ? rectCenter(this.slotObjects.get("inspection-pad")?.slot.rect ?? { x: 214, y: 152, width: 20, height: 20 })
-      : { x: this.player.x - 18, y: this.player.y - 18 };
+    const target = runtime.escortReleased
+      ? this.getEscortWanderPosition(escort)
+      : runtime.escortDistractedMs > 0
+        ? rectCenter(
+            this.slotObjects.get("inspection-pad")?.slot.rect ?? {
+              x: 214,
+              y: 152,
+              width: 20,
+              height: 20,
+            },
+          )
+        : { x: this.player.x - 18, y: this.player.y - 18 };
 
     const lerp = Math.min(1, delta / 260);
     this.setDronePosition(escort, {
@@ -1147,21 +1428,64 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private updateScannerMotion(): void {
+  private getEscortWanderPosition(escort: RenderedDrone): { x: number; y: number } {
+    const anchor = escort.def.rule.escortSpawn ?? escort.def.position;
+    const radius = Math.min(escort.def.rule.visionRadius - 18, 32);
+    const time = this.time.now / 1000;
+
+    return {
+      x: anchor.x + Math.cos(time * 0.95) * radius * 0.82,
+      y: anchor.y + Math.sin(time * 1.27) * radius * 0.68,
+    };
+  }
+
+  private updateScannerMotion(delta: number): void {
     for (const drone of this.droneObjects.values()) {
-      if (drone.def.rule.kind !== "scanner" || !drone.def.patrol) {
+      if (drone.def.rule.kind !== "scanner" || !drone.def.patrol || delta <= 0) {
         continue;
       }
 
-      this.setDronePosition(
-        drone,
-        samplePatrolPosition(
-          drone.def.position,
-          drone.def.patrol,
-          this.roomMotionElapsedMs,
-        ),
+      const patrolState = this.scannerPatrolStates.get(drone.def.id);
+      if (!patrolState) {
+        continue;
+      }
+
+      if (patrolState.lingerMs > 0) {
+        patrolState.lingerMs = Math.max(0, patrolState.lingerMs - delta);
+        continue;
+      }
+
+      const nextPosition = moveTowardTarget(
+        { x: drone.sprite.x, y: drone.sprite.y },
+        patrolState.target,
+        drone.def.patrol.speed,
+        delta,
       );
+      this.setDronePosition(drone, nextPosition);
+
+      if (hasReachedTarget(nextPosition, patrolState.target)) {
+        patrolState.lingerMs = drone.def.patrol.lingerMs ?? 1500;
+        patrolState.directionSign = patrolState.directionSign === 1 ? -1 : 1;
+        patrolState.target = this.pickScannerPatrolTarget(
+          drone.def,
+          patrolState.angleRadians,
+          patrolState.directionSign,
+        );
+      }
     }
+  }
+
+  private pickScannerPatrolTarget(
+    drone: DroneDefinition,
+    angleRadians: number,
+    directionSign: 1 | -1,
+  ): { x: number; y: number } {
+    return createPatrolTarget(
+      drone.position,
+      drone.patrol,
+      angleRadians + (directionSign === -1 ? Math.PI : 0),
+      1,
+    );
   }
 
   private setDronePosition(
@@ -1179,6 +1503,8 @@ export class GameScene extends Phaser.Scene {
     switch (state) {
       case "Guide":
         return { fill: 0x6be2ff };
+      case "Warn":
+        return { fill: 0xf0c562 };
       case "Escort":
         return { fill: 0xf3b65b };
       case "Alert":
