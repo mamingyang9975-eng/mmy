@@ -27,6 +27,7 @@ import type {
   ResidentDefinition,
   RoomDefinition,
   RoomRuntime,
+  SessionSnapshot,
   StaffDefinition,
   TerminalMode,
   WaitingZone,
@@ -275,7 +276,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.phase === "prelude") {
-      this.updatePrelude();
+      this.updatePrelude(delta);
       return;
     }
 
@@ -346,6 +347,7 @@ export class GameScene extends Phaser.Scene {
 
     const droneStates = this.session.updateIntent(
       {
+        playerPosition: playerPos,
         movementMode,
         speed: body.velocity.length(),
         isIndicating,
@@ -382,7 +384,7 @@ export class GameScene extends Phaser.Scene {
       runtime.receptionConfirmedMs > 0,
     );
     this.syncItems();
-    this.syncPlayerShadow();
+    this.syncPlayerShadow(delta);
     this.processInteractions();
     this.processTriggers();
     const latestSnapshot = this.session.getSnapshot();
@@ -1562,7 +1564,7 @@ export class GameScene extends Phaser.Scene {
 
     this.playerVisual = this.add.graphics();
     this.playerVisual.setDepth(20);
-    this.syncPlayerShadow();
+    this.syncPlayerShadow(0);
 
     this.indicateRing = this.add.circle(0, 0, 10);
     this.indicateRing.setDepth(19);
@@ -1601,7 +1603,7 @@ export class GameScene extends Phaser.Scene {
     this.preludeCompanionSpoken = false;
     this.preludeGateUnlocked = false;
     this.preludeHint =
-      "先靠近同伴按 E 交接，再从右侧外门进去。";
+      "先和同伴交接，再进外门。";
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
@@ -1609,7 +1611,7 @@ export class GameScene extends Phaser.Scene {
     this.setWorldFrame(PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT, "prelude");
     this.player.setPosition(64, 166);
     this.player.setVelocity(0, 0);
-    this.syncPlayerShadow();
+    this.syncPlayerShadow(0);
     this.roomTitle.setText("设施外 / 入口坡道");
     this.createPreludeSceneTexture();
     const sceneArt = this.add.image(
@@ -1645,15 +1647,14 @@ export class GameScene extends Phaser.Scene {
     companionPrompt.setDepth(11.3);
     this.decorateLabel(companionPrompt);
     this.preludeCompanionPrompt = companionPrompt;
-
-    const brief = this.add.text(42, 38, "“阿述就在里面。你先混进去，别一上来就露怯。”", {
+    const brief = this.add.text(24, 28, "进去前，先从同伴手里接过最后一件东西。", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "10px",
-      color: "#b8c8d8",
+      color: "#d6e4f1",
       resolution: CAMERA_ZOOM,
-      wordWrap: { width: 240 },
+      wordWrap: { width: 180 },
     });
-    brief.setDepth(4);
+    brief.setDepth(4.1);
     this.decorateLabel(brief);
 
     const facilitySign = this.add.text(468, 50, "低歧义设施", {
@@ -2340,7 +2341,7 @@ export class GameScene extends Phaser.Scene {
     this.setWorldFrame(dimensions.width, dimensions.height, "facility");
     this.player.setPosition(snapshot.room.playerSpawn.x, snapshot.room.playerSpawn.y);
     this.player.setVelocity(0, 0);
-    this.syncPlayerShadow();
+    this.syncPlayerShadow(0);
     this.roomTitle.setText(snapshot.room.name);
     const sceneTextureKey = this.ensureFacilitySceneTexture(snapshot.room, dimensions);
     const sceneArt = this.add.image(dimensions.width / 2, dimensions.height / 2, sceneTextureKey);
@@ -2720,7 +2721,7 @@ export class GameScene extends Phaser.Scene {
     return velocity;
   }
 
-  private updatePrelude(): void {
+  private updatePrelude(delta: number): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const velocity = this.getInputVelocity();
     const speedLimit = this.isSpeedBoostActive()
@@ -2733,7 +2734,7 @@ export class GameScene extends Phaser.Scene {
       body.setVelocity(velocity.x * speedLimit, velocity.y * speedLimit);
     }
 
-    this.syncPlayerShadow();
+    this.syncPlayerShadow(0);
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
     this.renderIndicateRing(0);
@@ -2952,10 +2953,11 @@ export class GameScene extends Phaser.Scene {
       door.exitGraceMs = open
         ? EXIT_GRACE_MS
         : Math.max(0, door.exitGraceMs - delta);
-      door.shape.setFillStyle(open ? 0x315f4d : 0x2d3b49, open ? 0.85 : 1);
-      door.shape.setStrokeStyle(2, open ? 0x8ff0a4 : 0xefcf69, open ? 0.9 : 0.5);
+      door.shape.setFillStyle(open ? 0x356c57 : 0x2f3843, open ? 0.94 : 1);
+      door.shape.setStrokeStyle(2.4, open ? 0x9effb6 : 0xf0c562, open ? 1 : 0.64);
       door.body.checkCollision.none = open;
-      door.label.setColor(open ? "#8ff0a4" : "#a5b7c8");
+      door.label.setColor(open ? "#b9ffd0" : "#e7c77d");
+      door.label.setText(`${door.def.label}\n${open ? "现在能过" : "还没放行"}`);
     }
   }
 
@@ -2981,8 +2983,16 @@ export class GameScene extends Phaser.Scene {
 
       const colors = this.getDroneColors(next);
       drone.light.setFillStyle(colors.fill, 0.95);
-      drone.range.setStrokeStyle(1, colors.fill, visible ? 0.24 : 0);
-      drone.range.setFillStyle(colors.fill, visible ? 0.05 : 0);
+      drone.range.setStrokeStyle(
+        next === "Alert" ? 2.4 : next === "Warn" ? 1.8 : 1.2,
+        colors.fill,
+        visible ? (next === "Alert" ? 0.6 : next === "Warn" ? 0.42 : 0.24) : 0,
+      );
+      drone.range.setFillStyle(
+        colors.fill,
+        visible ? (next === "Alert" ? 0.12 : next === "Warn" ? 0.08 : 0.05) : 0,
+      );
+      drone.label.setText(`${drone.def.label}\n${this.describeDroneState(next)}`);
     }
   }
 
@@ -3154,7 +3164,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncPlayerShadow(delta = 0): void {
+  private syncPlayerShadow(delta: number): void {
     this.syncPlayerVisual(delta);
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -3379,24 +3389,42 @@ export class GameScene extends Phaser.Scene {
   private syncHud(): void {
     if (this.phase === "prelude") {
       this.ui.renderHud({
-        roomName: "设施外",
-        interpretation: "未接入",
-        tendency: "尚未被读取",
-        terminalMode: "无",
+        roomName: "门外准备",
+        interpretation: "尚未入场",
+        interpretationTone: "neutral",
+        tendency: "读法未定",
+        tendencyTone: "neutral",
+        terminalMode: "无流程标签",
+        terminalTone: "neutral",
         carrying: "空手",
         hint: this.preludeHint,
+        hintTone: "neutral",
       });
       return;
     }
 
     const snapshot = this.session.getSnapshot();
+    const interpretationTone = this.getInterpretationTone(
+      snapshot.runtime.interpretation,
+      snapshot.runtime.alertWarningMs > 0 || snapshot.runtime.alertCountdownMs !== null,
+    );
+    const hintTone = this.getHintTone(snapshot);
     this.ui.renderHud({
       roomName: snapshot.room.shortName,
       interpretation: this.describeInterpretation(snapshot.runtime.interpretation),
+      interpretationTone,
       tendency: this.describeTendency(snapshot.runtime.interpretationScores),
+      tendencyTone: interpretationTone,
       terminalMode: this.describeTerminal(snapshot.runtime.terminalMode),
+      terminalTone:
+        snapshot.runtime.terminalMode === "maintenanceRequest"
+          ? "maintenance"
+          : snapshot.runtime.terminalMode === "faultReport"
+            ? "warning"
+            : "neutral",
       carrying: this.carriedItemId ? "电池" : "空手",
       hint: snapshot.runtime.message ?? snapshot.room.hint,
+      hintTone,
     });
   }
 
@@ -3627,20 +3655,61 @@ export class GameScene extends Phaser.Scene {
       staff.label.setPosition(position.x - 12, position.y + 12);
 
       const checking = staffRuntime.mode === "checkingQueue";
+      const loading = staffRuntime.mode === "loading";
       const moving =
         staffRuntime.mode === "walkingToTerminal" ||
-        staffRuntime.mode === "returningToDesk";
+        staffRuntime.mode === "returningToDesk" ||
+        staffRuntime.mode === "walkingRoute";
+      const activeColor =
+        staff.def.role === "porter"
+          ? loading
+            ? 0xf2be67
+            : 0xffd27a
+          : staff.def.role === "archivist"
+            ? loading
+              ? 0x7df2bc
+              : 0x6be2ff
+            : staff.def.role === "clerk"
+              ? loading
+                ? 0xf6d98b
+                : 0xc6f1ff
+          : checking
+            ? 0x7df2bc
+            : 0x73d4ff;
+      const idleColor =
+        staff.def.role === "porter"
+          ? 0xf2be67
+          : staff.def.role === "archivist"
+            ? 0x6be2ff
+            : staff.def.role === "clerk"
+              ? 0xc6f1ff
+            : 0x73d4ff;
 
-      staff.statusHalo.setVisible(checking || moving);
-      staff.statusHalo.setFillStyle(checking ? 0x7df2bc : 0x73d4ff, checking ? 0.14 : 0.07);
+      staff.statusHalo.setVisible(checking || moving || loading);
+      staff.statusHalo.setFillStyle(activeColor, checking || loading ? 0.14 : 0.07);
       staff.statusHalo.setStrokeStyle(
         1.5,
-        checking ? 0x7df2bc : 0x73d4ff,
-        checking ? 0.78 : 0.45,
+        activeColor,
+        checking || loading ? 0.78 : 0.45,
       );
-      staff.marker.setFillStyle(checking ? 0x7df2bc : 0xb8fff3, 0.92);
-      staff.label.setColor(checking ? "#c9ffe4" : "#d9f5ff");
-      staff.sprite.setAlpha(moving ? 0.94 : 1);
+      staff.marker.setFillStyle(
+        checking || loading ? activeColor : idleColor,
+        0.92,
+      );
+      staff.label.setColor(
+        checking
+          ? "#c9ffe4"
+          : loading
+            ? "#ffe9b9"
+            : staff.def.role === "archivist"
+              ? "#d4f3ff"
+              : staff.def.role === "clerk"
+                ? "#eef8ff"
+              : staff.def.role === "porter"
+                ? "#ffe2a8"
+                : "#d9f5ff",
+      );
+      staff.sprite.setAlpha(moving ? 0.94 : loading ? 0.98 : 1);
     }
   }
 
@@ -3661,6 +3730,13 @@ export class GameScene extends Phaser.Scene {
       );
       zone.label.setColor(
         receptionConfirmed ? "#c8ffe0" : isActive ? "#d2f3ff" : "#90c4d8",
+      );
+      zone.label.setText(
+        receptionConfirmed
+          ? `${zone.zone.label}\n已确认`
+          : isActive
+            ? `${zone.zone.label}\n正在读取`
+            : `${zone.zone.label}\n等待确认`,
       );
     }
   }
@@ -3750,22 +3826,22 @@ export class GameScene extends Phaser.Scene {
 
   private describeInterpretation(value: DoorRule["accepts"][number] | "intruder"): string {
     if (value === "guidedVisitor") {
-      return "访客通道";
+      return "读成访客";
     }
     if (value === "maintenanceCandidate") {
-      return "维修通道";
+      return "读成维修";
     }
-    return "未授权";
+    return "读成闯入";
   }
 
   private describeTerminal(value: TerminalMode): string {
     if (value === "maintenanceRequest") {
-      return "维修请求";
+      return "挂了维修工单";
     }
     if (value === "faultReport") {
-      return "故障上报";
+      return "挂了故障上报";
     }
-    return "无";
+    return "无流程标签";
   }
 
   private describeTendency(scores: InterpretationScores): string {
@@ -3775,8 +3851,61 @@ export class GameScene extends Phaser.Scene {
       ["闯入", scores.intruder],
     ] as const;
     const [primary, secondary] = [...pairs].sort((left, right) => right[1] - left[1]);
+    const lead = primary[1] - secondary[1];
 
-    return `${primary[0]} ${primary[1]} / ${secondary[0]} ${secondary[1]}`;
+    if (lead >= 3) {
+      return `偏${primary[0]}`;
+    }
+    if (lead >= 1.2) {
+      return `${primary[0]}占上风`;
+    }
+    return "读法未定";
+  }
+
+  private describeDroneState(state: DroneState): string {
+    if (state === "Guide") {
+      return "在放行你";
+    }
+    if (state === "Warn") {
+      return "开始起疑";
+    }
+    if (state === "Alert") {
+      return "正在锁定";
+    }
+    if (state === "Escort") {
+      return "会跟着你";
+    }
+    return "只是观察";
+  }
+
+  private getInterpretationTone(
+    value: DoorRule["accepts"][number] | "intruder",
+    isWarning: boolean,
+  ): "visitor" | "maintenance" | "intruder" | "warning" {
+    if (isWarning) {
+      return "warning";
+    }
+    if (value === "guidedVisitor") {
+      return "visitor";
+    }
+    if (value === "maintenanceCandidate") {
+      return "maintenance";
+    }
+    return "intruder";
+  }
+
+  private getHintTone(snapshot: SessionSnapshot): "neutral" | "warning" | "success" | "visitor" | "maintenance" | "intruder" {
+    if (snapshot.isComplete) {
+      return "success";
+    }
+    if (
+      snapshot.runtime.alertWarningMs > 0 ||
+      snapshot.runtime.alertCountdownMs !== null
+    ) {
+      return "warning";
+    }
+
+    return this.getInterpretationTone(snapshot.runtime.interpretation, false);
   }
 
   private playKeyboardClick(

@@ -258,6 +258,13 @@ export function canDoorOpen(rule: DoorRule, context: DoorContext): boolean {
     return false;
   }
 
+  if (
+    rule.requiresOfficeClearance &&
+    !context.officeClearanceActive
+  ) {
+    return false;
+  }
+
   if (rule.requiresSlowMovement && context.movementMode !== "slow") {
     return false;
   }

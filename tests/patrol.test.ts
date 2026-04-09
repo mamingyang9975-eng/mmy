@@ -51,7 +51,7 @@ describe("scanner room tuning", () => {
     );
     const scanners = [...scannerByRoom.values()];
 
-    expect(scanners.length).toBe(5);
+    expect(scanners.length).toBe(6);
 
     for (const scanner of scanners) {
       expect(scanner.rule.visionRadius).toBeGreaterThanOrEqual(48);

@@ -44,6 +44,10 @@ function enterRoomFour(session: GameSession): void {
   advanceToRoom(session, "room-4");
 }
 
+function enterRoomFive(session: GameSession): void {
+  advanceToRoom(session, "room-5");
+}
+
 describe("advanceInterpretation", () => {
   it("enters guidedVisitor after a completed signal and slow movement inside guide range", () => {
     const guided = advanceInterpretation(
@@ -442,6 +446,35 @@ describe("GameSession", () => {
     ).toBe(true);
   });
 
+  it("requires office clearance before the office exit opens", () => {
+    const room = roomById("room-5");
+    const door = room.doors[0];
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "guidedVisitor",
+        scores: scoresFor("guidedVisitor"),
+        terminalMode: "none",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+        officeClearanceActive: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "guidedVisitor",
+        scores: scoresFor("guidedVisitor"),
+        terminalMode: "none",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+        officeClearanceActive: true,
+      }),
+    ).toBe(true);
+  });
+
   it("uses the room two fault slot as a noisy setup instead of an instant failure", () => {
     const session = new GameSession();
     session.start();
@@ -467,6 +500,37 @@ describe("GameSession", () => {
     const snapshot = session.getSnapshot();
     expect(snapshot.runtime.alertCountdownMs).toBeNull();
     expect(snapshot.runtime.residentStates["resident-b"]?.mode).not.toBe("idle");
+  });
+
+  it("lets the porter route nudge a slow player with a battery toward maintenance flow", () => {
+    const session = new GameSession();
+    session.start();
+    advanceToRoom(session, "room-2");
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 74, y: 172 },
+        movementMode: "slow",
+        speed: 24,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: "battery",
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      300,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.porterFlowMs).toBeGreaterThan(0);
+    expect(snapshot.runtime.interpretation).toBe("maintenanceCandidate");
+    expect(snapshot.runtime.interpretationScores.maintenanceCandidate).toBeGreaterThan(
+      snapshot.runtime.interpretationScores.guidedVisitor,
+    );
   });
 
   it("lets a calm registered visitor pass room two through the fault-report branch", () => {
@@ -707,6 +771,39 @@ describe("GameSession", () => {
     expect(snapshot.runtime.terminalMode).toBe("none");
   });
 
+  it("lets the archivist's review window reinforce visitor identity in room four", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomFour(session);
+    session.placeItem("battery-main", "service-tray");
+    session.markTrigger("escort-trigger");
+    session.activateConsole("escort-reroute-console");
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 486, y: 162 },
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      2200,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.archiveReviewMs).toBeGreaterThan(0);
+    expect(snapshot.runtime.interpretationScores.guidedVisitor).toBeGreaterThan(
+      snapshot.runtime.interpretationScores.intruder,
+    );
+  });
+
   it("opens the room four maintenance gate on a slow approach once maintenance is registered", () => {
     const session = new GameSession();
     session.start();
@@ -732,6 +829,39 @@ describe("GameSession", () => {
       session.canOpenDoor(roomById("room-4").doors[0], {
         movementMode: "slow",
         isInDroneRange: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("lets the night clerk write a guided visitor into the office handover log", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomFive(session);
+
+    session.updateIntent(
+      {
+        playerPosition: { x: 540, y: 154 },
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: "handover-zone",
+      },
+      2600,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.officeClearanceMs).toBeGreaterThan(0);
+    expect(
+      session.canOpenDoor(roomById("room-5").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: true,
       }),
     ).toBe(true);
   });

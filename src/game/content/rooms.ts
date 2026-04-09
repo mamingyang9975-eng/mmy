@@ -156,6 +156,7 @@ export const ROOMS: RoomDefinition[] = [
     signage: [
       "主电源槽已锁定，请将服务部件放入侧边托盘。",
       "住户服务请求必须在门侧确认。",
+      "补给流转对象请保持缓行，勿偏离工作线。",
     ],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
@@ -189,7 +190,29 @@ export const ROOMS: RoomDefinition[] = [
         speed: 22,
       },
     ],
-    staff: [],
+    staff: [
+      {
+        id: "porter-b",
+        label: "后勤",
+        role: "porter",
+        position: { x: 76, y: 176 },
+        deskPoint: { x: 76, y: 176 },
+        terminalPoint: { x: 76, y: 176 },
+        speed: 24,
+        idleMs: 0,
+        checkMs: 0,
+        waitZoneId: "",
+        pauseMs: 1100,
+        influenceRadius: 28,
+        routePoints: [
+          { x: 76, y: 176 },
+          { x: 58, y: 112 },
+          { x: 116, y: 112 },
+          { x: 176, y: 134 },
+          { x: 120, y: 168 },
+        ],
+      },
+    ],
     doors: [
       {
         id: "service-door",
@@ -418,6 +441,7 @@ export const ROOMS: RoomDefinition[] = [
     signage: [
       "维修工单会一直带着护送。",
       "访客出口只接受被引导的访客。",
+      "复核对象请在示意区缓行等待记录更新。",
     ],
     dimensions: {
       width: 640,
@@ -461,7 +485,29 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     residents: [],
-    staff: [],
+    staff: [
+      {
+        id: "archivist-d",
+        label: "档案员",
+        role: "archivist",
+        position: { x: 430, y: 148 },
+        deskPoint: { x: 430, y: 148 },
+        terminalPoint: { x: 430, y: 148 },
+        speed: 30,
+        idleMs: 0,
+        checkMs: 0,
+        waitZoneId: "",
+        pauseMs: 1200,
+        influenceRadius: 34,
+        routePoints: [
+          { x: 430, y: 148 },
+          { x: 488, y: 162 },
+          { x: 522, y: 114 },
+          { x: 362, y: 58 },
+          { x: 332, y: 168 },
+        ],
+      },
+    ],
     doors: [
       {
         id: "maintenance-gate",
@@ -567,6 +613,111 @@ export const ROOMS: RoomDefinition[] = [
         id: "escort-trigger",
         rect: { x: 192, y: 58, width: 34, height: 94 },
         action: "spawnEscort",
+      },
+    ],
+  },
+  {
+    id: "room-5",
+    name: "办公 / 值班交接",
+    shortName: "区域 6",
+    hint: "去交接区站定，等夜班文员把你记进值班流程。",
+    signage: [
+      "人工确认仅用于纠正低置信结果。",
+      "值班交接对象请在交接区缓行等待。",
+      "未写入交接记录的对象不得离层。",
+    ],
+    dimensions: {
+      width: 704,
+      height: 216,
+    },
+    playerSpawn: { x: 54, y: 170 },
+    wallRects: [
+      { x: 176, y: 0, width: 22, height: 82 },
+      { x: 176, y: 126, width: 22, height: 90 },
+      { x: 622, y: 0, width: 22, height: 82 },
+      { x: 622, y: 126, width: 22, height: 90 },
+      { x: 286, y: 40, width: 66, height: 16 },
+      { x: 286, y: 160, width: 66, height: 16 },
+      { x: 448, y: 54, width: 54, height: 14 },
+      { x: 448, y: 148, width: 54, height: 14 },
+    ],
+    drones: [
+      {
+        id: "scanner-e",
+        label: "扫描机",
+        position: { x: 372, y: 104 },
+        rule: {
+          id: "scanner-e",
+          kind: "scanner",
+          visionRadius: 52,
+        },
+        patrol: {
+          speed: 24,
+          radius: 34,
+          lingerMs: 1400,
+        },
+      },
+    ],
+    residents: [],
+    staff: [
+      {
+        id: "clerk-e",
+        label: "夜班文员",
+        role: "clerk",
+        position: { x: 494, y: 160 },
+        deskPoint: { x: 494, y: 160 },
+        terminalPoint: { x: 494, y: 160 },
+        speed: 26,
+        idleMs: 0,
+        checkMs: 0,
+        waitZoneId: "handover-zone",
+        pauseMs: 1400,
+        influenceRadius: 34,
+        routePoints: [
+          { x: 494, y: 160 },
+          { x: 540, y: 152 },
+          { x: 564, y: 102 },
+          { x: 486, y: 54 },
+          { x: 404, y: 104 },
+        ],
+      },
+    ],
+    doors: [
+      {
+        id: "handover-exit",
+        label: "值班出口",
+        rect: { x: 622, y: 82, width: 22, height: 44 },
+        rule: {
+          id: "handover-exit",
+          accepts: ["guidedVisitor"],
+          requiresOfficeClearance: true,
+          requiresSlowMovement: true,
+        },
+        exitToNextRoom: true,
+      },
+    ],
+    items: [],
+    signalZones: [],
+    waitingZones: [
+      {
+        id: "handover-zone",
+        label: "交接区",
+        rect: { x: 526, y: 144, width: 48, height: 28 },
+      },
+    ],
+    guidePaths: [
+      {
+        id: "visitor-route-e",
+        color: "blue",
+        activeWhen: "guided",
+        tolerance: 14,
+        points: [
+          { x: 538, y: 158 },
+          { x: 566, y: 152 },
+          { x: 596, y: 138 },
+          { x: 614, y: 114 },
+          { x: 618, y: 104 },
+        ],
       },
     ],
   },

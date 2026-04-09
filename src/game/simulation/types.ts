@@ -61,13 +61,15 @@ export interface ResidentDefinition {
   speed: number;
 }
 
-export type StaffRole = "receptionist";
+export type StaffRole = "receptionist" | "porter" | "archivist" | "clerk";
 
 export type StaffMode =
   | "idleAtDesk"
   | "walkingToTerminal"
   | "checkingQueue"
-  | "returningToDesk";
+  | "returningToDesk"
+  | "walkingRoute"
+  | "loading";
 
 export interface StaffDefinition {
   id: string;
@@ -80,6 +82,9 @@ export interface StaffDefinition {
   idleMs: number;
   checkMs: number;
   waitZoneId: string;
+  routePoints?: Vec2[];
+  pauseMs?: number;
+  influenceRadius?: number;
 }
 
 export interface ConsoleDefinition {
@@ -87,7 +92,11 @@ export interface ConsoleDefinition {
   rect: Rect;
   label: string;
   prompt: string;
-  action: "primeGuidance" | "registerVisitor" | "rerouteEscort";
+  action:
+    | "primeGuidance"
+    | "registerVisitor"
+    | "rerouteEscort"
+    | "releaseSubject";
 }
 
 export interface ItemSpawn {
@@ -121,6 +130,7 @@ export interface DoorRule {
   requiresFilledSlotsExcluding?: string[];
   requiresResidentService?: boolean;
   requiresReceptionConfirmed?: boolean;
+  requiresOfficeClearance?: boolean;
 }
 
 export interface DoorDefinition {
@@ -192,6 +202,7 @@ export interface RoomDefinition {
 }
 
 export interface PlayerIntentSnapshot {
+  playerPosition?: Vec2;
   movementMode: MovementMode;
   speed: number;
   isIndicating: boolean;
@@ -216,6 +227,7 @@ export interface DoorContext {
   filledSlotIds?: string[];
   requiredSlotIds?: string[];
   receptionConfirmedActive?: boolean;
+  officeClearanceActive?: boolean;
 }
 
 export interface DroneContext {
@@ -247,6 +259,7 @@ export interface StaffRuntime {
   position: Vec2;
   stateMs: number;
   hasConfirmedCurrentCycle: boolean;
+  routeIndex: number;
 }
 
 export interface InterpretationResult {
@@ -274,6 +287,10 @@ export interface RoomRuntime {
   residentStates: Record<string, ResidentRuntime>;
   staffStates: Record<string, StaffRuntime>;
   receptionConfirmedMs: number;
+  porterFlowMs: number;
+  archiveReviewMs: number;
+  officeClearanceMs: number;
+  subjectReleased: boolean;
   message: string | null;
 }
 

@@ -19,6 +19,7 @@ import type {
   RoomRuntime,
   ResidentRuntime,
   SessionSnapshot,
+  StaffDefinition,
   StaffRuntime,
   TerminalMode,
   Vec2,
@@ -29,6 +30,9 @@ const ALERT_WARNING_MS = 1000;
 const ESCORT_DISTRACT_MS = 3200;
 const ESCORT_REROUTE_MS = 4200;
 const RECEPTION_CONFIRM_MS = 5000;
+const PORTER_FLOW_MS = 2600;
+const ARCHIVE_REVIEW_MS = 3200;
+const OFFICE_CLEARANCE_MS = 4500;
 
 function createRuntime(room: RoomDefinition): RoomRuntime {
   return {
@@ -60,14 +64,19 @@ function createRuntime(room: RoomDefinition): RoomRuntime {
       (room.staff ?? []).map((staff) => [
         staff.id,
         {
-          mode: "idleAtDesk",
+          mode: staff.role === "porter" ? "walkingRoute" : "idleAtDesk",
           position: { ...staff.position },
-          stateMs: staff.idleMs,
+          stateMs: staff.role === "porter" ? 0 : staff.idleMs,
           hasConfirmedCurrentCycle: false,
+          routeIndex: 0,
         } satisfies StaffRuntime,
       ]),
     ),
     receptionConfirmedMs: 0,
+    porterFlowMs: 0,
+    archiveReviewMs: 0,
+    officeClearanceMs: 0,
+    subjectReleased: false,
     message: room.hint,
   };
 }
@@ -102,7 +111,7 @@ export class GameSession {
 
   start(): void {
     this.paused = false;
-    this.runtime.message = this.getRoom().hint;
+    this.runtime.message = this.getDefaultMessage();
   }
 
   togglePause(): void {
@@ -153,6 +162,15 @@ export class GameSession {
       0,
       this.runtime.receptionConfirmedMs - deltaMs,
     );
+    this.runtime.porterFlowMs = Math.max(0, this.runtime.porterFlowMs - deltaMs);
+    this.runtime.archiveReviewMs = Math.max(
+      0,
+      this.runtime.archiveReviewMs - deltaMs,
+    );
+    this.runtime.officeClearanceMs = Math.max(
+      0,
+      this.runtime.officeClearanceMs - deltaMs,
+    );
 
     this.updateResidents(deltaMs);
     this.updateStaff(snapshot, deltaMs);
@@ -168,6 +186,9 @@ export class GameSession {
     this.runtime.interpretationScores = interpretation.scores;
     this.applyVisitorRegistration();
     this.applyReceptionConfirmation();
+    this.applyPorterFlow();
+    this.applyArchiveReview();
+    this.applyOfficeClearance();
     if (
       resolveInterpretationTag(
         this.runtime.interpretationScores,
@@ -213,13 +234,13 @@ export class GameSession {
       this.runtime.escortReleased = true;
       this.runtime.escortReroutedMs = 0;
       this.runtime.message =
-        "本地工单已结束，系统开始把你重新归类为被引导访客，护送机也会停止贴身跟随。";
+        "工单撤销后，你被重新写回访客流程，护送也松开了。";
     }
 
     const droneStates = this.getDroneStates(snapshot);
 
     if (Object.values(droneStates).includes("Alert")) {
-      const warningStates = this.updateAlertWarning(droneStates, deltaMs);
+      const warningStates = this.updateAlertWarning(snapshot, droneStates, deltaMs);
       if (warningStates) {
         return warningStates;
       }
@@ -252,24 +273,24 @@ export class GameSession {
     if (room.id === "room-3" && slotId === "inspection-pad") {
       this.runtime.escortDistractedMs = ESCORT_DISTRACT_MS;
       this.runtime.message =
-        "检修台吸走了护送机的注意力。趁它偏离路线时，继续保持维修身份，穿过作业出口。";
+        "检修台让护送机偏离了路线。";
       return this.runtime.terminalMode;
     }
 
     if (this.runtime.terminalMode === "faultReport") {
       this.runtime.message =
         room.id === "room-2"
-          ? "异常上报把住户和扫描机的注意力都拉向服务门。你还没被当成维修人员，但已经制造出更快的确认窗口。"
-          : "异常槽触发故障上报。";
+          ? "故障上报把注意力拉向了服务门。"
+          : "终端挂上了故障上报。";
     } else if (this.runtime.terminalMode === "maintenanceRequest") {
       this.runtime.message =
         room.id === "room-3"
-          ? "系统已登记你的维修工单。现在第一道门认你了，但护送流程也会开始跟上来。"
+          ? "维修工单会替你开前门，也会引来护送。"
           : room.id === "room-4"
-            ? "系统已登记你的维修工单。它会帮你通过第一道门，但也会把你牢牢拴在维修流程里。"
-            : "服务终端已登记维修请求。";
+            ? "维修工单会替你开前门，也会把你锁在维修读法里。"
+            : "服务终端挂上了维修工单。";
     } else {
-      this.runtime.message = room.hint;
+      this.runtime.message = this.getDefaultMessage();
     }
 
     return this.runtime.terminalMode;
@@ -285,8 +306,7 @@ export class GameSession {
 
     if (consoleDef.action === "primeGuidance") {
       this.runtime.guideFieldPrimed = true;
-      this.runtime.message =
-        "引导面板已激活。现在站到感应区里按住空格停留两秒示意，然后在扫描机视野内慢行。";
+      this.runtime.message = "引导区已经可用。";
       return;
     }
 
@@ -298,16 +318,14 @@ export class GameSession {
         guidedVisitor: 8,
         maintenanceCandidate: 0,
       };
-      this.runtime.message =
-        "登记面板已录入访客身份。你现在会被系统识别为访客，可以从访客门通过。";
+      this.runtime.message = "访客记录已经写入系统。";
       return;
     }
 
     if (consoleDef.action === "rerouteEscort") {
       this.runtime.escortReroutedMs = ESCORT_REROUTE_MS;
       this.runtime.terminalMode = "none";
-      this.runtime.message =
-        "广播台把护送机改派到复核位，本地维修工单也被转出。趁这个窗口去示意区，把自己切回访客流程。";
+      this.runtime.message = "广播改派了护送，工单也被撤走了。";
     }
   }
 
@@ -337,6 +355,7 @@ export class GameSession {
       filledSlotIds: getFilledSlotIds(this.runtime.placedItems),
       requiredSlotIds: this.getRoom().terminal?.slots.map((slot) => slot.id) ?? [],
       receptionConfirmedActive: this.runtime.receptionConfirmedMs > 0,
+      officeClearanceActive: this.runtime.officeClearanceMs > 0,
     };
 
     if (this.runtime.unlockedDoorIds.includes(door.id)) {
@@ -366,8 +385,8 @@ export class GameSession {
       this.runtime.escortUnlocked = true;
       this.runtime.message =
         this.getRoom().id === "room-3"
-          ? "护送流程已接入。维修身份会继续帮你穿过设施，但出口现在会拒绝带着护送的对象。"
-          : "护送流程已接入。维修身份会一路给你开门，但想离开这一层，你得想办法让系统改口。";
+          ? "护送接入后，作业出口开始卡你。"
+          : "护送接入了，它会一路盯着你。";
     }
   }
 
@@ -376,7 +395,7 @@ export class GameSession {
       this.complete = true;
       this.paused = true;
       this.runtime.message =
-        "观察室：你不是躲开了系统，而是一路牵着它的解释，走过了整个设施。";
+        "观察室：你不是躲开了系统，而是一路牵着它的判断走出了整座设施。";
       return false;
     }
 
@@ -391,6 +410,7 @@ export class GameSession {
   private enterRoom(roomIndex: number): void {
     this.roomIndex = roomIndex;
     this.runtime = createRuntime(ROOMS[this.roomIndex]);
+    this.runtime.message = this.getDefaultMessage();
     this.paused = false;
   }
 
@@ -418,13 +438,13 @@ export class GameSession {
     return "none";
   }
 
-  private triggerAlert(): void {
+  private triggerAlert(message?: string): void {
     if (this.runtime.alertCountdownMs !== null) {
       return;
     }
     this.runtime.alertWarningMs = 0;
     this.runtime.alertCountdownMs = ALERT_RESET_MS;
-    this.runtime.message = "当前区域已转入高警戒。";
+    this.runtime.message = message ?? "当前区域已转入高警戒。";
   }
 
   private applyVisitorRegistration(): void {
@@ -448,6 +468,42 @@ export class GameSession {
     this.runtime.interpretationScores.intruder = Math.max(
       0,
       this.runtime.interpretationScores.intruder - 2,
+    );
+  }
+
+  private applyPorterFlow(): void {
+    if (this.runtime.porterFlowMs <= 0) {
+      return;
+    }
+
+    this.runtime.interpretationScores.maintenanceCandidate += 2.6;
+    this.runtime.interpretationScores.intruder = Math.max(
+      0,
+      this.runtime.interpretationScores.intruder - 0.8,
+    );
+  }
+
+  private applyArchiveReview(): void {
+    if (this.runtime.archiveReviewMs <= 0) {
+      return;
+    }
+
+    this.runtime.interpretationScores.guidedVisitor += 3.4;
+    this.runtime.interpretationScores.intruder = Math.max(
+      0,
+      this.runtime.interpretationScores.intruder - 1.4,
+    );
+  }
+
+  private applyOfficeClearance(): void {
+    if (this.runtime.officeClearanceMs <= 0) {
+      return;
+    }
+
+    this.runtime.interpretationScores.guidedVisitor += 2.4;
+    this.runtime.interpretationScores.intruder = Math.max(
+      0,
+      this.runtime.interpretationScores.intruder - 1.2,
     );
   }
 
@@ -498,14 +554,12 @@ export class GameSession {
     const waiting = this.hasResidentWaitingAtService();
 
     if (waiting && this.runtime.terminalMode === "maintenanceRequest") {
-      this.runtime.message =
-        "住户已到服务等待点。门侧确认完成，维修通道已准备放行。";
+      this.runtime.message = "住户已经到门边，服务门会认这次响应。";
       return;
     }
 
     if (waiting && this.runtime.terminalMode === "faultReport") {
-      this.runtime.message =
-        "故障上报把住户提前叫到了门侧。现在换成正确托盘，系统会更快把你误认成被呼叫来的维修人员。";
+      this.runtime.message = "故障上报先把住户叫到了门边。";
       return;
     }
 
@@ -517,8 +571,8 @@ export class GameSession {
     ) {
       this.runtime.message =
         this.runtime.terminalMode === "faultReport"
-          ? "住户正在响应异常上报。你已经制造出流程噪音，但还没拿到真正的维修身份。"
-          : "住户正在响应服务请求，等他到达门侧等待点。";
+          ? "住户正在响应异常，但你还没真正拿到维修读法。"
+          : "住户正在朝服务门移动。";
     }
   }
 
@@ -537,69 +591,297 @@ export class GameSession {
         continue;
       }
 
-      if (staff.role !== "receptionist") {
+      if (staff.role === "receptionist") {
+        this.updateReceptionist(staff, runtimeState, snapshot, deltaMs);
         continue;
       }
 
-      if (runtimeState.mode === "walkingToTerminal") {
-        const nextPosition = moveTowards(
-          runtimeState.position,
-          staff.terminalPoint,
-          staff.speed,
-          deltaMs,
-        );
-        runtimeState.position = nextPosition;
-        if (samePoint(nextPosition, staff.terminalPoint)) {
-          runtimeState.mode = "checkingQueue";
-          runtimeState.stateMs = staff.checkMs;
-          runtimeState.hasConfirmedCurrentCycle = false;
-        }
+      if (staff.role === "porter") {
+        this.updatePorter(staff, runtimeState, snapshot, deltaMs);
         continue;
       }
 
-      if (runtimeState.mode === "returningToDesk") {
-        const nextPosition = moveTowards(
-          runtimeState.position,
-          staff.deskPoint,
-          staff.speed,
-          deltaMs,
-        );
-        runtimeState.position = nextPosition;
-        if (samePoint(nextPosition, staff.deskPoint)) {
-          runtimeState.mode = "idleAtDesk";
-          runtimeState.stateMs = staff.idleMs;
-          runtimeState.hasConfirmedCurrentCycle = false;
-        }
+      if (staff.role === "archivist") {
+        this.updateArchivist(staff, runtimeState, snapshot, deltaMs);
         continue;
       }
 
+      if (staff.role === "clerk") {
+        this.updateClerk(staff, runtimeState, snapshot, deltaMs);
+      }
+    }
+  }
+
+  private updateReceptionist(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+    deltaMs: number,
+  ): void {
+    if (!staff || staff.role !== "receptionist") {
+      return;
+    }
+
+    if (runtimeState.mode === "walkingToTerminal") {
+      const nextPosition = moveTowards(
+        runtimeState.position,
+        staff.terminalPoint,
+        staff.speed,
+        deltaMs,
+      );
+      runtimeState.position = nextPosition;
+      if (samePoint(nextPosition, staff.terminalPoint)) {
+        runtimeState.mode = "checkingQueue";
+        runtimeState.stateMs = staff.checkMs;
+        runtimeState.hasConfirmedCurrentCycle = false;
+      }
+      return;
+    }
+
+    if (runtimeState.mode === "returningToDesk") {
+      const nextPosition = moveTowards(
+        runtimeState.position,
+        staff.deskPoint,
+        staff.speed,
+        deltaMs,
+      );
+      runtimeState.position = nextPosition;
+      if (samePoint(nextPosition, staff.deskPoint)) {
+        runtimeState.mode = "idleAtDesk";
+        runtimeState.stateMs = staff.idleMs;
+        runtimeState.hasConfirmedCurrentCycle = false;
+      }
+      return;
+    }
+
+    runtimeState.stateMs = Math.max(0, runtimeState.stateMs - deltaMs);
+
+    if (
+      runtimeState.mode === "checkingQueue" &&
+      !runtimeState.hasConfirmedCurrentCycle &&
+      snapshot.activeWaitingZoneId === staff.waitZoneId &&
+      snapshot.movementMode === "slow" &&
+      snapshot.speed < 24
+    ) {
+      runtimeState.hasConfirmedCurrentCycle = true;
+      this.runtime.receptionConfirmedMs = RECEPTION_CONFIRM_MS;
+      this.runtime.message = "前台把你写进了这轮接待。";
+    }
+
+    if (runtimeState.stateMs > 0) {
+      return;
+    }
+
+    if (runtimeState.mode === "idleAtDesk") {
+      runtimeState.mode = "walkingToTerminal";
+      return;
+    }
+
+    if (runtimeState.mode === "checkingQueue") {
+      runtimeState.mode = "returningToDesk";
+    }
+  }
+
+  private updatePorter(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+    deltaMs: number,
+  ): void {
+    if (!staff || staff.role !== "porter" || !staff.routePoints?.length) {
+      return;
+    }
+
+    if (runtimeState.mode === "loading") {
       runtimeState.stateMs = Math.max(0, runtimeState.stateMs - deltaMs);
-
-      if (
-        runtimeState.mode === "checkingQueue" &&
-        !runtimeState.hasConfirmedCurrentCycle &&
-        snapshot.activeWaitingZoneId === staff.waitZoneId &&
-        snapshot.movementMode === "slow" &&
-        snapshot.speed < 24
-      ) {
-        runtimeState.hasConfirmedCurrentCycle = true;
-        this.runtime.receptionConfirmedMs = RECEPTION_CONFIRM_MS;
-        this.runtime.message =
-          "前台完成了接待确认。趁记录还热，穿过内部门。";
+      this.tryRefreshPorterFlow(staff, runtimeState, snapshot);
+      if (runtimeState.stateMs === 0) {
+        runtimeState.mode = "walkingRoute";
       }
+      return;
+    }
 
-      if (runtimeState.stateMs > 0) {
-        continue;
-      }
+    const nextIndex =
+      (runtimeState.routeIndex + 1) % staff.routePoints.length;
+    const target = staff.routePoints[nextIndex];
+    const nextPosition = moveTowards(
+      runtimeState.position,
+      target,
+      staff.speed,
+      deltaMs,
+    );
+    runtimeState.position = nextPosition;
+    this.tryRefreshPorterFlow(staff, runtimeState, snapshot);
 
-      if (runtimeState.mode === "idleAtDesk") {
-        runtimeState.mode = "walkingToTerminal";
-        continue;
-      }
+    if (samePoint(nextPosition, target)) {
+      runtimeState.routeIndex = nextIndex;
+      runtimeState.mode = "loading";
+      runtimeState.stateMs = staff.pauseMs ?? 1200;
+    }
+  }
 
-      if (runtimeState.mode === "checkingQueue") {
-        runtimeState.mode = "returningToDesk";
+  private tryRefreshPorterFlow(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+  ): void {
+    if (
+      !staff ||
+      staff.role !== "porter" ||
+      !snapshot.playerPosition ||
+      snapshot.movementMode !== "slow" ||
+      snapshot.speed > 70 ||
+      snapshot.carryingItemType !== "battery"
+    ) {
+      return;
+    }
+
+    const radius = staff.influenceRadius ?? 26;
+    if (distanceBetween(snapshot.playerPosition, runtimeState.position) > radius) {
+      return;
+    }
+
+    this.runtime.porterFlowMs = PORTER_FLOW_MS;
+    if (
+      this.getRoom().id === "room-2" &&
+      this.runtime.terminalMode === "none"
+    ) {
+      this.runtime.message = "后勤节奏正在替你说话。";
+    }
+  }
+
+  private updateArchivist(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+    deltaMs: number,
+  ): void {
+    if (!staff || staff.role !== "archivist" || !staff.routePoints?.length) {
+      return;
+    }
+
+    if (runtimeState.mode === "loading") {
+      runtimeState.stateMs = Math.max(0, runtimeState.stateMs - deltaMs);
+      this.tryRefreshArchiveReview(staff, runtimeState, snapshot);
+      if (runtimeState.stateMs === 0) {
+        runtimeState.mode = "walkingRoute";
       }
+      return;
+    }
+
+    const nextIndex =
+      (runtimeState.routeIndex + 1) % staff.routePoints.length;
+    const target = staff.routePoints[nextIndex];
+    const nextPosition = moveTowards(
+      runtimeState.position,
+      target,
+      staff.speed,
+      deltaMs,
+    );
+    runtimeState.position = nextPosition;
+    this.tryRefreshArchiveReview(staff, runtimeState, snapshot);
+
+    if (samePoint(nextPosition, target)) {
+      runtimeState.routeIndex = nextIndex;
+      runtimeState.mode = "loading";
+      runtimeState.stateMs = staff.pauseMs ?? 1200;
+    }
+  }
+
+  private tryRefreshArchiveReview(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+  ): void {
+    if (
+      !staff ||
+      staff.role !== "archivist" ||
+      !snapshot.playerPosition ||
+      !snapshot.isInSignalZone ||
+      snapshot.movementMode !== "slow" ||
+      snapshot.speed > 26
+    ) {
+      return;
+    }
+
+    const radius = staff.influenceRadius ?? 32;
+    if (distanceBetween(snapshot.playerPosition, runtimeState.position) > radius) {
+      return;
+    }
+
+    this.runtime.archiveReviewMs = ARCHIVE_REVIEW_MS;
+    if (
+      this.getRoom().id === "room-4" &&
+      this.runtime.terminalMode === "none"
+    ) {
+      this.runtime.message = "档案员正在把你写回访客队列。";
+    }
+  }
+
+  private updateClerk(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+    deltaMs: number,
+  ): void {
+    if (!staff || staff.role !== "clerk" || !staff.routePoints?.length) {
+      return;
+    }
+
+    if (runtimeState.mode === "loading") {
+      runtimeState.stateMs = Math.max(0, runtimeState.stateMs - deltaMs);
+      this.tryGrantOfficeClearance(staff, runtimeState, snapshot);
+      if (runtimeState.stateMs === 0) {
+        runtimeState.mode = "walkingRoute";
+      }
+      return;
+    }
+
+    const nextIndex =
+      (runtimeState.routeIndex + 1) % staff.routePoints.length;
+    const target = staff.routePoints[nextIndex];
+    const nextPosition = moveTowards(
+      runtimeState.position,
+      target,
+      staff.speed,
+      deltaMs,
+    );
+    runtimeState.position = nextPosition;
+    this.tryGrantOfficeClearance(staff, runtimeState, snapshot);
+
+    if (samePoint(nextPosition, target)) {
+      runtimeState.routeIndex = nextIndex;
+      runtimeState.mode = "loading";
+      runtimeState.stateMs = staff.pauseMs ?? 1400;
+    }
+  }
+
+  private tryGrantOfficeClearance(
+    staff: StaffDefinition,
+    runtimeState: StaffRuntime,
+    snapshot: PlayerIntentSnapshot,
+  ): void {
+    if (
+      !staff ||
+      staff.role !== "clerk" ||
+      snapshot.activeWaitingZoneId !== staff.waitZoneId ||
+      snapshot.movementMode !== "slow" ||
+      snapshot.speed > 18
+    ) {
+      return;
+    }
+
+    const radius = staff.influenceRadius ?? 32;
+    if (
+      !snapshot.playerPosition ||
+      distanceBetween(snapshot.playerPosition, runtimeState.position) > radius
+    ) {
+      return;
+    }
+
+    this.runtime.officeClearanceMs = OFFICE_CLEARANCE_MS;
+    if (this.getRoom().id === "room-5") {
+      this.runtime.message = "夜班文员把你记进了值班交接。";
     }
   }
 
@@ -610,6 +892,7 @@ export class GameSession {
   }
 
   private updateAlertWarning(
+    snapshot: PlayerIntentSnapshot,
     droneStates: Record<string, DroneState>,
     deltaMs: number,
   ): Record<string, DroneState> | null {
@@ -623,11 +906,11 @@ export class GameSession {
     }
 
     if (this.runtime.alertWarningMs === 0) {
-      this.triggerAlert();
+      this.triggerAlert(this.getLockdownMessage(snapshot));
       return null;
     }
 
-    this.runtime.message = "扫描机正在锁定你，立刻松开 Shift 慢行，或脱离它的判断范围。";
+    this.runtime.message = this.getAlertWarningMessage(snapshot);
 
     return Object.fromEntries(
       Object.entries(droneStates).map(([id, state]) => [
@@ -642,14 +925,20 @@ export class GameSession {
 
     if (room.id === "room-1") {
       return this.runtime.visitorFlowUnlocked
-        ? "登记完成，你已被系统识别为访客。从访客门通过。"
-        : "先去登记面板完成访客登记，再从访客门通过。";
+        ? "系统里已经有你的访客记录。"
+        : "这一区先比对登记。";
     }
 
     if (room.id === "room-1b") {
       return this.runtime.receptionConfirmedMs > 0
-        ? "前台刚完成接待确认。保持稳定，从内部门通过。"
-        : "登记只说明你来过。去候位区站定，等前台把你接进流程。";
+        ? "接待确认还在生效。"
+        : "前台确认之前，内部门不认你。";
+    }
+
+    if (room.id === "room-2" && this.runtime.porterFlowMs > 0) {
+      return this.runtime.terminalMode === "maintenanceRequest"
+        ? "后勤节奏和工单都在替你背书。"
+        : "后勤节奏正在替你背书。";
     }
 
     if (
@@ -657,11 +946,11 @@ export class GameSession {
       this.runtime.terminalMode === "maintenanceRequest" &&
       this.hasResidentWaitingAtService()
     ) {
-      return "住户已在门侧确认服务。保持慢行，沿维修通道通过。";
+      return "住户确认后，服务门会认这张工单。";
     }
 
     if (room.id === "room-2" && this.runtime.terminalMode === "faultReport") {
-      return "异常上报正在扰动服务门一带。它没直接放行，但会让正确的误读来得更快。";
+      return "故障上报把注意力拉向了服务门。";
     }
 
     if (
@@ -669,7 +958,21 @@ export class GameSession {
       this.runtime.escortUnlocked &&
       this.runtime.escortDistractedMs <= 0
     ) {
-      return "你仍被系统归在维修流程里。第一道门认你，但作业出口会拒绝带着护送的对象。";
+      return "维修读法还在，但护送会卡住作业出口。";
+    }
+
+    if (
+      room.id === "room-4" &&
+      this.runtime.archiveReviewMs > 0 &&
+      this.runtime.terminalMode === "none"
+    ) {
+      return "档案员正在复核你的记录。保持慢行并停在示意区，让系统把你重新写成访客。";
+    }
+
+    if (room.id === "room-5") {
+      return this.runtime.officeClearanceMs > 0
+        ? "值班许可已经写入。保持慢行，从值班出口离开这一层。"
+        : "去交接区站定，等夜班文员把你记进值班流程。";
     }
 
     if (
@@ -678,7 +981,7 @@ export class GameSession {
       !this.runtime.escortReleased &&
       this.runtime.terminalMode === "maintenanceRequest"
     ) {
-      return "你仍被系统当成维修人员。先在广播屏处卸下本地工单，再去示意区切回访客。";
+      return "维修工单还在，出口不会把你认成访客。";
     }
 
     if (
@@ -686,26 +989,75 @@ export class GameSession {
       this.runtime.escortReroutedMs > 0 &&
       this.runtime.terminalMode === "none"
     ) {
-      return "护送机已被短暂改派。现在去示意区按住空格，把自己切回访客引导流程。";
+      return "护送被暂时支开了，系统正在重新读你。";
     }
 
     if (this.runtime.terminalMode === "maintenanceRequest") {
-      return "服务终端已登记维修请求。";
+      return "维修工单正在替你说话。";
     }
 
     if (this.runtime.guideFieldPrimed) {
-      return "引导面板已激活。现在站到感应区里按住空格停留两秒示意，然后在扫描机视野内慢行。";
+      return "引导区会帮你被读成访客。";
     }
 
     const { guidedVisitor, maintenanceCandidate, intruder } =
       this.runtime.interpretationScores;
     if (maintenanceCandidate >= guidedVisitor && maintenanceCandidate >= intruder) {
-      return "系统正在把你往维修人员那边解释，但还在观察你是否真的熟悉流程。";
+      return "系统更偏向维修读法。";
     }
     if (guidedVisitor >= intruder) {
-      return "系统更倾向把你当作被引导的访客。保持缓慢、稳定、像是知道自己该去哪里。";
+      return "系统更偏向访客读法。";
     }
-    return "你的动作还像未经授权的闯入。试着让路线、停留和物品摆放都更像一种合理流程。";
+    return "系统还把你往闯入那边读。";
+  }
+
+  private getAlertWarningMessage(snapshot: PlayerIntentSnapshot): string {
+    const reasons = this.getSuspicionReasons(snapshot);
+    if (reasons.length === 0) {
+      return "扫描机起疑了。你的举动不像正常流程。";
+    }
+    if (reasons.length === 1) {
+      return `扫描机起疑了：${reasons[0]}暴露了你。`;
+    }
+    const lead = reasons.slice(0, -1).join("、");
+    const tail = reasons[reasons.length - 1];
+    return `扫描机起疑了：${lead}和${tail}叠在了一起。`;
+  }
+
+  private getLockdownMessage(snapshot: PlayerIntentSnapshot): string {
+    const reasons = this.getSuspicionReasons(snapshot);
+    if (reasons.length === 0) {
+      return "区域已转入高警戒。";
+    }
+    return `区域已锁定：${reasons[0]}让系统升级了警戒。`;
+  }
+
+  private getSuspicionReasons(snapshot: PlayerIntentSnapshot): string[] {
+    const reasons: string[] = [];
+
+    if (snapshot.speed >= 90) {
+      reasons.push("快跑");
+    } else if (snapshot.movementMode === "normal") {
+      reasons.push("步态太急");
+    }
+
+    if (!snapshot.isOnTrustedRoute && snapshot.movementMode === "normal") {
+      reasons.push("偏离路线");
+    }
+
+    if (
+      snapshot.isInSignalZone &&
+      snapshot.isIndicating &&
+      !snapshot.signalEnabled
+    ) {
+      reasons.push("在错误的位置示意");
+    }
+
+    if (snapshot.terminalMode === "faultReport") {
+      reasons.push("故障上报把注意力也拉了过来");
+    }
+
+    return reasons;
   }
 
   private getDroneStates(
@@ -760,4 +1112,8 @@ function moveTowards(
 
 function samePoint(a: Vec2, b: Vec2): boolean {
   return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+}
+
+function distanceBetween(a: Vec2, b: Vec2): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }

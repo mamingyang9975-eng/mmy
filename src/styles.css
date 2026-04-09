@@ -137,6 +137,37 @@ select {
   line-height: 1.35;
   color: rgba(236, 244, 252, 0.84);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.22);
+  overflow-wrap: anywhere;
+}
+
+.game-status-value[data-tone="visitor"],
+.metric-value[data-tone="visitor"],
+.hint-value[data-tone="visitor"] {
+  color: #8cecff;
+}
+
+.game-status-value[data-tone="maintenance"],
+.metric-value[data-tone="maintenance"],
+.hint-value[data-tone="maintenance"] {
+  color: #ffd28f;
+}
+
+.game-status-value[data-tone="intruder"],
+.metric-value[data-tone="intruder"],
+.hint-value[data-tone="intruder"] {
+  color: #ff8a94;
+}
+
+.game-status-value[data-tone="warning"],
+.metric-value[data-tone="warning"],
+.hint-value[data-tone="warning"] {
+  color: #ffc56e;
+}
+
+.game-status-value[data-tone="success"],
+.metric-value[data-tone="success"],
+.hint-value[data-tone="success"] {
+  color: #95f0b5;
 }
 
 .game-overlay-bottom {
@@ -258,13 +289,16 @@ select {
   font-size: 18px;
   font-weight: 600;
   color: #edf3fb;
+  overflow-wrap: anywhere;
 }
 
 .hint-value {
   margin-top: 8px;
   font-size: 14px;
+  font-weight: 600;
   line-height: 1.5;
   color: #d7e0ed;
+  overflow-wrap: anywhere;
 }
 
 .modal {

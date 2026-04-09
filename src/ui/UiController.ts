@@ -4,13 +4,25 @@ export interface UiCommands {
   restart: () => void;
 }
 
+export type HudTone =
+  | "neutral"
+  | "visitor"
+  | "maintenance"
+  | "intruder"
+  | "warning"
+  | "success";
+
 export interface HudViewModel {
   roomName: string;
   interpretation: string;
+  interpretationTone?: HudTone;
   tendency: string;
+  tendencyTone?: HudTone;
   terminalMode: string;
+  terminalTone?: HudTone;
   carrying: string;
   hint: string;
+  hintTone?: HudTone;
 }
 
 interface ModalAction {
@@ -63,14 +75,8 @@ export class UiController {
     overlayTop.className = "game-overlay-top";
     const statusStrip = document.createElement("div");
     statusStrip.className = "game-status-strip";
-    this.overlayIdentityValue = this.createOverlayMetric(
-      statusStrip,
-      "当前解释",
-    );
-    this.overlayTendencyValue = this.createOverlayMetric(
-      statusStrip,
-      "解释倾向",
-    );
+    this.overlayIdentityValue = this.createOverlayMetric(statusStrip, "系统读法");
+    this.overlayTendencyValue = this.createOverlayMetric(statusStrip, "最近信号");
     overlayTop.append(statusStrip);
 
     const overlayBottom = document.createElement("div");
@@ -89,32 +95,32 @@ export class UiController {
 
     const hud = document.createElement("aside");
     hud.className = "hud-panel";
-    hud.setAttribute("aria-label", "解释面板");
+    hud.setAttribute("aria-label", "读法面板");
 
     const hudHeader = document.createElement("div");
     hudHeader.className = "hud-header";
     const hudEyebrow = document.createElement("div");
     hudEyebrow.className = "hud-eyebrow";
-    hudEyebrow.textContent = "解释面板";
+    hudEyebrow.textContent = "读法面板";
     const hudTitle = document.createElement("h2");
     hudTitle.className = "hud-title";
-    hudTitle.textContent = "设施读数";
+    hudTitle.textContent = "正在发生什么";
     hudHeader.append(hudEyebrow, hudTitle);
 
     const hudScroll = document.createElement("div");
     hudScroll.className = "hud-scroll";
 
-    this.roomValue = this.createMetric(hudScroll, "当前区域");
-    this.identityValue = this.createMetric(hudScroll, "当前解释");
-    this.tendencyValue = this.createMetric(hudScroll, "解释倾向");
-    this.terminalValue = this.createMetric(hudScroll, "局部模式");
-    this.carryValue = this.createMetric(hudScroll, "携带物品");
+    this.roomValue = this.createMetric(hudScroll, "区域");
+    this.identityValue = this.createMetric(hudScroll, "当前读法");
+    this.tendencyValue = this.createMetric(hudScroll, "偏向");
+    this.terminalValue = this.createMetric(hudScroll, "流程标签");
+    this.carryValue = this.createMetric(hudScroll, "携带");
 
     const hintWrap = document.createElement("div");
     hintWrap.className = "hint-wrap";
     const hintLabel = document.createElement("div");
     hintLabel.className = "metric-label";
-    hintLabel.textContent = "当前提示";
+    hintLabel.textContent = "最近信号";
     this.hintValue = document.createElement("div");
     this.hintValue.className = "hint-value";
     hintWrap.append(hintLabel, this.hintValue);
@@ -144,21 +150,28 @@ export class UiController {
     this.identityValue.textContent = viewModel.interpretation;
     this.tendencyValue.textContent = viewModel.tendency;
     this.overlayIdentityValue.textContent = viewModel.interpretation;
-    this.overlayTendencyValue.textContent = viewModel.tendency;
+    this.overlayTendencyValue.textContent = viewModel.hint;
     this.terminalValue.textContent = viewModel.terminalMode;
     this.carryValue.textContent = viewModel.carrying;
     this.hintValue.textContent = viewModel.hint;
+
+    this.applyTone(this.identityValue, viewModel.interpretationTone);
+    this.applyTone(this.overlayIdentityValue, viewModel.interpretationTone);
+    this.applyTone(this.tendencyValue, viewModel.tendencyTone);
+    this.applyTone(this.terminalValue, viewModel.terminalTone);
+    this.applyTone(this.hintValue, viewModel.hintTone);
+    this.applyTone(this.overlayTendencyValue, viewModel.hintTone);
   }
 
   showIntro(): void {
     this.showPhoneMessage(
       "接应人",
       [
-        "阿述被弄进去了，消息一直断断续续。",
-        "我只能送你到外门。进去看看，人要是还能带出来，就带他走。",
-        "别一上来就露怯，像来办事的就行。",
+        "阿述被带进去了，消息断断续续。",
+        "我只能送你到外门。进去以后别像在躲，像是本来就在这套流程里。",
+        "看系统怎么读你，不要只盯出口。",
       ],
-      "WASD 移动，Shift 慢行，E 交互，Space 停留示意",
+      "WASD 移动，Shift 快走，E 交互，Space 原地示意",
       [
         {
           label: "收起手机",
@@ -172,7 +185,7 @@ export class UiController {
   showPause(): void {
     this.showModal(
       "已暂停",
-      ["你可以继续当前房间，或从头重新进入三房间切片。"],
+      ["继续当前流程，或从外门重新来一遍。"],
       [
         {
           label: "继续",
@@ -191,8 +204,8 @@ export class UiController {
     this.showModal(
       "观察室",
       [
-        "你一路通关，靠的不只是躲避，而是不断塑造系统如何理解你。",
-        "这里最危险的从来不只是监控，而是那些流畅到不再被质疑的自动解释。",
+        "你一路穿过设施，靠的不是躲开系统，而是让它一路把你读成能被放行的人。",
+        "这里真正危险的，不是摄像头本身，而是那些看起来合理的自动判断。",
       ],
       [
         {
@@ -232,7 +245,7 @@ export class UiController {
 
     const status = document.createElement("div");
     status.className = "phone-status";
-    status.innerHTML = "<span>23:14</span><span>信号正常</span>";
+    status.innerHTML = "<span>23:14</span><span>信号稳定</span>";
 
     const chatHeader = document.createElement("div");
     chatHeader.className = "phone-chat-header";
@@ -248,7 +261,7 @@ export class UiController {
     name.textContent = sender;
     const state = document.createElement("div");
     state.className = "phone-presence";
-    state.textContent = "刚发来 3 条消息";
+    state.textContent = `刚发来 ${messages.length} 条消息`;
     headerText.append(name, state);
     chatHeader.append(avatar, headerText);
 
@@ -335,7 +348,7 @@ export class UiController {
     this.phoneButton.disabled = !hasPhoneMessage || this.activeModal !== "hidden";
     this.phoneButton.title =
       this.activeModal === "generic"
-        ? "当前弹窗关闭后可重新打开手机"
+        ? "关闭当前弹窗后可重新打开手机"
         : this.activeModal === "phone"
           ? "手机当前已打开"
           : "重新打开手机";
@@ -369,5 +382,13 @@ export class UiController {
     wrap.append(labelNode, valueNode);
     parent.append(wrap);
     return valueNode;
+  }
+
+  private applyTone(element: HTMLElement, tone: HudTone | undefined): void {
+    if (!tone || tone === "neutral") {
+      delete element.dataset.tone;
+      return;
+    }
+    element.dataset.tone = tone;
   }
 }
