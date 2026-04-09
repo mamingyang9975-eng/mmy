@@ -19,14 +19,29 @@ function scoresFor(
   return scores;
 }
 
+function roomById(id: string) {
+  const room = ROOMS.find((entry) => entry.id === id);
+  if (!room) {
+    throw new Error(`Missing room: ${id}`);
+  }
+  return room;
+}
+
+function advanceToRoom(session: GameSession, roomId: string): void {
+  while (session.getSnapshot().room.id !== roomId) {
+    const advanced = session.goToNextRoom();
+    if (!advanced) {
+      throw new Error(`Unable to reach room: ${roomId}`);
+    }
+  }
+}
+
 function enterRoomThree(session: GameSession): void {
-  session.goToNextRoom();
-  session.goToNextRoom();
+  advanceToRoom(session, "room-3");
 }
 
 function enterRoomFour(session: GameSession): void {
-  enterRoomThree(session);
-  session.goToNextRoom();
+  advanceToRoom(session, "room-4");
 }
 
 describe("advanceInterpretation", () => {
@@ -43,7 +58,10 @@ describe("advanceInterpretation", () => {
         carryingItemType: null,
         terminalMode: "none",
         visibleDroneIds: [],
+        activeWaitingZoneId: null,
       },
+      createInterpretationScores(),
+      "intruder",
       createGuideMemory(),
       16,
     );
@@ -60,7 +78,10 @@ describe("advanceInterpretation", () => {
         carryingItemType: null,
         terminalMode: "none",
         visibleDroneIds: [],
+        activeWaitingZoneId: null,
       },
+      guided.scores,
+      guided.tag,
       guided.guideMemory,
       300,
     );
@@ -82,7 +103,10 @@ describe("advanceInterpretation", () => {
         carryingItemType: null,
         terminalMode: "none",
         visibleDroneIds: [],
+        activeWaitingZoneId: null,
       },
+      createInterpretationScores(),
+      "intruder",
       createGuideMemory(),
       16,
     );
@@ -99,7 +123,10 @@ describe("advanceInterpretation", () => {
         carryingItemType: null,
         terminalMode: "none",
         visibleDroneIds: [],
+        activeWaitingZoneId: null,
       },
+      guided.scores,
+      guided.tag,
       guided.guideMemory,
       300,
     );
@@ -121,6 +148,8 @@ describe("advanceInterpretation", () => {
         terminalMode: "none",
         visibleDroneIds: [],
       },
+      createInterpretationScores(),
+      "intruder",
       createGuideMemory(),
       16,
     );
@@ -129,6 +158,9 @@ describe("advanceInterpretation", () => {
   });
 
   it("prioritizes maintenanceCandidate while maintenance mode is active", () => {
+    const previousScores = createInterpretationScores();
+    previousScores.maintenanceCandidate = 2.6;
+
     const result = advanceInterpretation(
       {
         movementMode: "slow",
@@ -141,7 +173,10 @@ describe("advanceInterpretation", () => {
         carryingItemType: "battery",
         terminalMode: "maintenanceRequest",
         visibleDroneIds: [],
+        activeWaitingZoneId: null,
       },
+      previousScores,
+      "maintenanceCandidate",
       createGuideMemory(),
       120,
     );
@@ -252,8 +287,9 @@ describe("door and terminal rules", () => {
   });
 
   it("allows room two maintenance access once both required slots are filled", () => {
-    const door = ROOMS[1].doors[0];
-    const requiredSlotIds = ROOMS[1].terminal?.slots.map((slot) => slot.id) ?? [];
+    const room = roomById("room-2");
+    const door = room.doors[0];
+    const requiredSlotIds = room.terminal?.slots.map((slot) => slot.id) ?? [];
     const filledSlotIds = ["power-slot", "service-tray"];
 
     expect(
@@ -272,7 +308,7 @@ describe("door and terminal rules", () => {
   });
 
   it("resolves terminal slots into maintenance and fault modes", () => {
-    const recipes = ROOMS[1].terminal?.recipes ?? [];
+    const recipes = roomById("room-2").terminal?.recipes ?? [];
     expect(resolveTerminalMode(recipes, "service-tray", "battery")).toBe(
       "maintenanceRequest",
     );
@@ -283,12 +319,12 @@ describe("door and terminal rules", () => {
   });
 
   it("expands room three and room four to give escort logic more space", () => {
-    expect(ROOMS[2].dimensions?.width).toBe(512);
-    expect(ROOMS[3].dimensions?.width).toBe(640);
+    expect(roomById("room-3").dimensions?.width).toBe(512);
+    expect(roomById("room-4").dimensions?.width).toBe(640);
   });
 
   it("keeps room four signal zone inside the final switch area before the exit wall", () => {
-    const room = ROOMS[3];
+    const room = roomById("room-4");
     const signalZone = room.signalZones[0];
     const leftWallRight = room.wallRects[1].x + room.wallRects[1].width;
     const exitWallLeft = room.wallRects[2].x;
@@ -299,16 +335,39 @@ describe("door and terminal rules", () => {
 });
 
 describe("GameSession", () => {
-  it("requires the room one console before the signal zone can establish guided flow", () => {
+  it("keeps room one as intruder until the visitor registration panel is used", () => {
     const session = new GameSession();
     session.start();
 
-    let guided = advanceInterpretation(
+    session.updateIntent(
       {
         movementMode: "slow",
-        speed: 0,
-        isIndicating: true,
-        isInSignalZone: true,
+        speed: 32,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      120,
+    );
+
+    expect(session.getSnapshot().runtime.interpretation).toBe("intruder");
+
+    session.activateConsole("registration-console-a");
+    expect(session.getSnapshot().runtime.visitorFlowUnlocked).toBe(true);
+    expect(session.getSnapshot().runtime.interpretation).toBe("guidedVisitor");
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 32,
+        isIndicating: false,
+        isInSignalZone: false,
         isInGuideRange: false,
         isOnTrustedRoute: false,
         signalEnabled: false,
@@ -316,39 +375,77 @@ describe("GameSession", () => {
         terminalMode: "none",
         visibleDroneIds: [],
       },
-      createGuideMemory(),
-      16,
+      120,
     );
 
-    expect(guided.tag).toBe("intruder");
-
-    session.activateConsole("guide-console-a");
-    expect(session.getSnapshot().runtime.guideFieldPrimed).toBe(true);
-
-    guided = advanceInterpretation(
-      {
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.interpretation).toBe("guidedVisitor");
+    expect(snapshot.runtime.interpretationScores.guidedVisitor).toBeGreaterThan(
+      snapshot.runtime.interpretationScores.intruder,
+    );
+    expect(
+      session.canOpenDoor(ROOMS[0].doors[0], {
         movementMode: "slow",
-        speed: 0,
-        isIndicating: true,
-        isInSignalZone: true,
-        isInGuideRange: false,
-        isOnTrustedRoute: false,
-        signalEnabled: true,
-        carryingItemType: null,
-        terminalMode: "none",
-        visibleDroneIds: [],
-      },
-      createGuideMemory(),
-      16,
-    );
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
+  });
 
-    expect(guided.tag).toBe("guidedVisitor");
+  it("supports room two's calmer visitor branch after a fault report", () => {
+    const room = roomById("room-2");
+    const alternateRule = room.doors[0].alternateRules?.[0];
+
+    expect(alternateRule).toBeDefined();
+    expect(
+      canDoorOpen(alternateRule!, {
+        interpretation: "guidedVisitor",
+        scores: {
+          intruder: 4,
+          guidedVisitor: 8,
+          maintenanceCandidate: 1,
+        },
+        terminalMode: "faultReport",
+        escortActive: false,
+        residentServiceActive: true,
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("requires a fresh reception confirmation before the buffer door opens", () => {
+    const room = roomById("room-1b");
+    const door = room.doors[0];
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "guidedVisitor",
+        scores: scoresFor("guidedVisitor"),
+        terminalMode: "none",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+        receptionConfirmedActive: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "guidedVisitor",
+        scores: scoresFor("guidedVisitor"),
+        terminalMode: "none",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+        receptionConfirmedActive: true,
+      }),
+    ).toBe(true);
   });
 
   it("uses the room two fault slot as a noisy setup instead of an instant failure", () => {
     const session = new GameSession();
     session.start();
-    session.goToNextRoom();
+    advanceToRoom(session, "room-2");
     session.placeItem("battery-a", "fault-slot");
 
     session.updateIntent(
@@ -370,6 +467,109 @@ describe("GameSession", () => {
     const snapshot = session.getSnapshot();
     expect(snapshot.runtime.alertCountdownMs).toBeNull();
     expect(snapshot.runtime.residentStates["resident-b"]?.mode).not.toBe("idle");
+  });
+
+  it("lets a calm registered visitor pass room two through the fault-report branch", () => {
+    const session = new GameSession();
+    session.start();
+    session.activateConsole("registration-console-a");
+    advanceToRoom(session, "room-2");
+    session.placeItem("battery-a", "fault-slot");
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 18,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: true,
+        isOnTrustedRoute: true,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "faultReport",
+        visibleDroneIds: ["scanner-b"],
+        activeWaitingZoneId: null,
+      },
+      2200,
+    );
+
+    expect(session.getSnapshot().runtime.residentStates["resident-b"]?.mode).toBe(
+      "waitingAtService",
+    );
+    expect(
+      session.canOpenDoor(roomById("room-2").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
+    expect(session.getSnapshot().runtime.interpretation).toBe("guidedVisitor");
+  });
+
+  it("uses the receptionist cycle to unlock the reception buffer door", () => {
+    const session = new GameSession();
+    session.start();
+    session.activateConsole("registration-console-a");
+    advanceToRoom(session, "room-1b");
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: "queue-a",
+      },
+      3000,
+    );
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: "queue-a",
+      },
+      4000,
+    );
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: "queue-a",
+      },
+      120,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.receptionConfirmedMs).toBeGreaterThan(0);
+    expect(
+      session.canOpenDoor(roomById("room-1b").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
   });
 
   it("keeps room three maintenance exit closed until the escort has been diverted", () => {
@@ -396,7 +596,7 @@ describe("GameSession", () => {
     );
 
     expect(
-      session.canOpenDoor(ROOMS[2].doors[1], {
+      session.canOpenDoor(roomById("room-3").doors[1], {
         movementMode: "slow",
         isInDroneRange: true,
       }),
@@ -405,12 +605,48 @@ describe("GameSession", () => {
     session.placeItem("battery-spare", "inspection-pad");
 
     expect(
-      session.canOpenDoor(ROOMS[2].doors[1], {
+      session.canOpenDoor(roomById("room-3").doors[1], {
         movementMode: "slow",
         isInDroneRange: true,
       }),
     ).toBe(true);
     expect(session.getSnapshot().runtime.terminalMode).toBe("maintenanceRequest");
+  });
+
+  it("opens the room three maintenance gate as soon as a valid work order is active", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomThree(session);
+    session.placeItem("battery-main", "service-tray");
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 48,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "maintenanceRequest",
+        visibleDroneIds: [],
+      },
+      16,
+    );
+
+    expect(
+      session.canOpenDoor(roomById("room-3").doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      session.canOpenDoor(roomById("room-3").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
   });
 
   it("resets room three escort state on reset", () => {
@@ -471,6 +707,35 @@ describe("GameSession", () => {
     expect(snapshot.runtime.terminalMode).toBe("none");
   });
 
+  it("opens the room four maintenance gate on a slow approach once maintenance is registered", () => {
+    const session = new GameSession();
+    session.start();
+    enterRoomFour(session);
+    session.placeItem("battery-main", "service-tray");
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 48,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "maintenanceRequest",
+        visibleDroneIds: [],
+      },
+      16,
+    );
+
+    expect(
+      session.canOpenDoor(roomById("room-4").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
+  });
+
   it("releases the room four escort after signal completion and opens the visitor exit", () => {
     const session = new GameSession();
     session.start();
@@ -500,7 +765,7 @@ describe("GameSession", () => {
     expect(snapshot.runtime.escortReleased).toBe(true);
     expect(states["escort-d"]).toBe("Observe");
     expect(
-      session.canOpenDoor(ROOMS[3].doors[1], {
+      session.canOpenDoor(roomById("room-4").doors[1], {
         movementMode: "slow",
         isInDroneRange: true,
       }),

@@ -10,7 +10,7 @@ const DISPLAY_WIDTH = 1152;
 const DISPLAY_HEIGHT = 648;
 
 if (!app) {
-  throw new Error("App container not found.");
+  throw new Error("未找到应用容器。");
 }
 
 const ui = new UiController(app);

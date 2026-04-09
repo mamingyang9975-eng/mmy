@@ -43,11 +43,15 @@ describe("patrol helpers", () => {
 
 describe("scanner room tuning", () => {
   it("keeps scanner drones on compact patrols while later rooms widen the patrol radius", () => {
-    const scanners = ROOMS.map((room) =>
-      room.drones.find((drone) => drone.rule.kind === "scanner"),
-    ).filter((scanner) => scanner !== undefined);
+    const scannerByRoom = new Map(
+      ROOMS.map((room) => [
+        room.id,
+        room.drones.find((drone) => drone.rule.kind === "scanner"),
+      ]).filter((entry): entry is [string, NonNullable<(typeof ROOMS)[number]["drones"][number]>] => entry[1] !== undefined),
+    );
+    const scanners = [...scannerByRoom.values()];
 
-    expect(scanners.length).toBe(4);
+    expect(scanners.length).toBe(5);
 
     for (const scanner of scanners) {
       expect(scanner.rule.visionRadius).toBeGreaterThanOrEqual(48);
@@ -60,11 +64,11 @@ describe("scanner room tuning", () => {
       expect(scanner.patrol?.speed).toBeLessThanOrEqual(24);
     }
 
-    expect((scanners[2].patrol?.radius ?? 0)).toBeGreaterThan(
-      scanners[1].patrol?.radius ?? 0,
+    expect((scannerByRoom.get("room-3")?.patrol?.radius ?? 0)).toBeGreaterThan(
+      scannerByRoom.get("room-2")?.patrol?.radius ?? 0,
     );
-    expect((scanners[3].patrol?.radius ?? 0)).toBeGreaterThan(
-      scanners[2].patrol?.radius ?? 0,
+    expect((scannerByRoom.get("room-4")?.patrol?.radius ?? 0)).toBeGreaterThan(
+      scannerByRoom.get("room-3")?.patrol?.radius ?? 0,
     );
   });
 });

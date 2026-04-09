@@ -13,11 +13,28 @@ export interface HudViewModel {
   hint: string;
 }
 
+interface ModalAction {
+  label: string;
+  action: () => void;
+  primary?: boolean;
+}
+
+interface PhoneMessageData {
+  sender: string;
+  messages: string[];
+  footer: string;
+  actions: ModalAction[];
+}
+
+type ModalState = "hidden" | "phone" | "generic";
+
 export class UiController {
   private commands: UiCommands | null = null;
   private readonly roomValue: HTMLElement;
   private readonly identityValue: HTMLElement;
   private readonly tendencyValue: HTMLElement;
+  private readonly overlayIdentityValue: HTMLElement;
+  private readonly overlayTendencyValue: HTMLElement;
   private readonly terminalValue: HTMLElement;
   private readonly carryValue: HTMLElement;
   private readonly hintValue: HTMLElement;
@@ -25,6 +42,9 @@ export class UiController {
   private readonly modalTitle: HTMLElement;
   private readonly modalBody: HTMLElement;
   private readonly modalActions: HTMLElement;
+  private readonly phoneButton: HTMLButtonElement;
+  private lastPhoneMessage: PhoneMessageData | null = null;
+  private activeModal: ModalState = "hidden";
 
   constructor(root: HTMLElement) {
     root.className = "app-shell";
@@ -35,6 +55,37 @@ export class UiController {
     const gameRoot = document.createElement("div");
     gameRoot.id = "game-root";
     gameRoot.className = "game-root";
+
+    const gameOverlay = document.createElement("div");
+    gameOverlay.className = "game-overlay";
+
+    const overlayTop = document.createElement("div");
+    overlayTop.className = "game-overlay-top";
+    const statusStrip = document.createElement("div");
+    statusStrip.className = "game-status-strip";
+    this.overlayIdentityValue = this.createOverlayMetric(
+      statusStrip,
+      "当前解释",
+    );
+    this.overlayTendencyValue = this.createOverlayMetric(
+      statusStrip,
+      "解释倾向",
+    );
+    overlayTop.append(statusStrip);
+
+    const overlayBottom = document.createElement("div");
+    overlayBottom.className = "game-overlay-bottom";
+    this.phoneButton = document.createElement("button");
+    this.phoneButton.type = "button";
+    this.phoneButton.className = "game-phone-button";
+    this.phoneButton.textContent = "打开手机";
+    this.phoneButton.hidden = true;
+    this.phoneButton.disabled = true;
+    this.phoneButton.addEventListener("click", () => this.reopenPhone());
+    overlayBottom.append(this.phoneButton);
+
+    gameOverlay.append(overlayTop, overlayBottom);
+    gameRoot.append(gameOverlay);
 
     const hud = document.createElement("aside");
     hud.className = "hud-panel";
@@ -92,6 +143,8 @@ export class UiController {
     this.roomValue.textContent = viewModel.roomName;
     this.identityValue.textContent = viewModel.interpretation;
     this.tendencyValue.textContent = viewModel.tendency;
+    this.overlayIdentityValue.textContent = viewModel.interpretation;
+    this.overlayTendencyValue.textContent = viewModel.tendency;
     this.terminalValue.textContent = viewModel.terminalMode;
     this.carryValue.textContent = viewModel.carrying;
     this.hintValue.textContent = viewModel.hint;
@@ -153,18 +206,24 @@ export class UiController {
 
   hideModal(): void {
     this.modal.className = "modal hidden";
+    this.activeModal = "hidden";
+    this.updatePhoneButton();
   }
 
   private showPhoneMessage(
     sender: string,
     messages: string[],
     footer: string,
-    actions: Array<{
-      label: string;
-      action: () => void;
-      primary?: boolean;
-    }>,
+    actions: ModalAction[],
   ): void {
+    this.lastPhoneMessage = {
+      sender,
+      messages: [...messages],
+      footer,
+      actions: [...actions],
+    };
+    this.activeModal = "phone";
+    this.updatePhoneButton();
     this.modal.className = "modal phone-modal";
     this.modalTitle.textContent = "";
 
@@ -228,12 +287,10 @@ export class UiController {
   private showModal(
     title: string,
     paragraphs: string[],
-    actions: Array<{
-      label: string;
-      action: () => void;
-      primary?: boolean;
-    }>,
+    actions: ModalAction[],
   ): void {
+    this.activeModal = "generic";
+    this.updatePhoneButton();
     this.modal.className = "modal";
     this.modalTitle.textContent = title;
     this.modalBody.replaceChildren(
@@ -248,13 +305,7 @@ export class UiController {
     this.modal.classList.remove("hidden");
   }
 
-  private renderActions(
-    actions: Array<{
-      label: string;
-      action: () => void;
-      primary?: boolean;
-    }>,
-  ): void {
+  private renderActions(actions: ModalAction[]): void {
     this.modalActions.replaceChildren(
       ...actions.map((item) => {
         const button = document.createElement("button");
@@ -267,6 +318,33 @@ export class UiController {
     );
   }
 
+  private reopenPhone(): void {
+    if (!this.lastPhoneMessage || this.activeModal !== "hidden") {
+      return;
+    }
+
+    const { sender, messages, footer, actions } = this.lastPhoneMessage;
+    this.showPhoneMessage(sender, messages, footer, actions);
+  }
+
+  private updatePhoneButton(): void {
+    const hasPhoneMessage = this.lastPhoneMessage !== null;
+    this.phoneButton.hidden = !hasPhoneMessage;
+    this.phoneButton.textContent =
+      this.activeModal === "phone" ? "手机已打开" : "打开手机";
+    this.phoneButton.disabled = !hasPhoneMessage || this.activeModal !== "hidden";
+    this.phoneButton.title =
+      this.activeModal === "generic"
+        ? "当前弹窗关闭后可重新打开手机"
+        : this.activeModal === "phone"
+          ? "手机当前已打开"
+          : "重新打开手机";
+    this.phoneButton.setAttribute(
+      "aria-pressed",
+      String(this.activeModal === "phone"),
+    );
+  }
+
   private createMetric(parent: HTMLElement, label: string): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "metric";
@@ -275,6 +353,19 @@ export class UiController {
     labelNode.textContent = label;
     const valueNode = document.createElement("div");
     valueNode.className = "metric-value";
+    wrap.append(labelNode, valueNode);
+    parent.append(wrap);
+    return valueNode;
+  }
+
+  private createOverlayMetric(parent: HTMLElement, label: string): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "game-status-block";
+    const labelNode = document.createElement("div");
+    labelNode.className = "game-status-label";
+    labelNode.textContent = label;
+    const valueNode = document.createElement("div");
+    valueNode.className = "game-status-value";
     wrap.append(labelNode, valueNode);
     parent.append(wrap);
     return valueNode;

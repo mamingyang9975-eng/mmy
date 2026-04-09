@@ -5,12 +5,12 @@ const SCANNER_VISION_RADIUS = 48;
 export const ROOMS: RoomDefinition[] = [
   {
     id: "room-1",
-    name: "Access / Initial Read",
-    shortName: "Room 1",
-    hint: "Activate the guide panel, hold Space in the signal zone, then move slowly while the scanner can see you.",
+    name: "接入 / 访客登记",
+    shortName: "区域 1",
+    hint: "先到登记面板完成访客登记，再从访客门通过。",
     signage: [
-      "Stable and legible behavior is processed first.",
-      "Complete guided access before approaching the visitor door.",
+      "系统会先比对登记记录，再判定你的身份。",
+      "靠近访客门前，先完成访客登记。",
     ],
     playerSpawn: { x: 48, y: 170 },
     wallRects: [
@@ -20,7 +20,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-a",
-        label: "Scanner",
+        label: "扫描机",
         position: { x: 126, y: 118 },
         rule: {
           id: "scanner-a",
@@ -38,7 +38,7 @@ export const ROOMS: RoomDefinition[] = [
     doors: [
       {
         id: "north-door",
-        label: "Visitor Door",
+        label: "访客门",
         rect: { x: 192, y: 88, width: 24, height: 40 },
         rule: {
           id: "north-door",
@@ -49,31 +49,113 @@ export const ROOMS: RoomDefinition[] = [
     ],
     consoles: [
       {
-        id: "guide-console-a",
+        id: "registration-console-a",
         rect: { x: 108, y: 146, width: 18, height: 18 },
-        label: "Guide Panel",
-        prompt: "Press E to activate guidance",
-        action: "primeGuidance",
+        label: "登记面板",
+        prompt: "按 E 登记访客",
+        action: "registerVisitor",
       },
     ],
-    signalRequiresActivation: true,
     items: [],
-    signalZones: [
-      {
-        id: "entry-signal",
-        rect: { x: 64, y: 144, width: 44, height: 28 },
-      },
-    ],
+    signalZones: [],
     guidePaths: [],
   },
   {
-    id: "room-2",
-    name: "Service / Resident Check",
-    shortName: "Room 2",
-    hint: "Place a battery in the service tray, then wait for the resident to confirm service at the door.",
+    id: "room-1b",
+    name: "接待 / 缓冲确认",
+    shortName: "区域 2",
+    hint: "登记只说明你来过。去候位区站定，等前台把你接进流程。",
     signage: [
-      "Main power slot locked. Leave service parts in the side tray.",
-      "Resident service requests must be confirmed at the door.",
+      "请在候位区等待人工确认。",
+      "确认完成前，请勿靠近内部门。",
+    ],
+    dimensions: {
+      width: 448,
+      height: 216,
+    },
+    playerSpawn: { x: 42, y: 170 },
+    wallRects: [
+      { x: 232, y: 0, width: 24, height: 86 },
+      { x: 232, y: 126, width: 24, height: 90 },
+    ],
+    drones: [
+      {
+        id: "scanner-b0",
+        label: "扫描机",
+        position: { x: 150, y: 108 },
+        rule: {
+          id: "scanner-b0",
+          kind: "scanner",
+          visionRadius: 50,
+        },
+        patrol: {
+          speed: 22,
+          radius: 24,
+          lingerMs: 1500,
+        },
+      },
+    ],
+    residents: [],
+    staff: [
+      {
+        id: "receptionist-a",
+        label: "前台",
+        role: "receptionist",
+        position: { x: 168, y: 96 },
+        deskPoint: { x: 168, y: 96 },
+        terminalPoint: { x: 114, y: 146 },
+        speed: 20,
+        idleMs: 3000,
+        checkMs: 1800,
+        waitZoneId: "queue-a",
+      },
+    ],
+    doors: [
+      {
+        id: "reception-door",
+        label: "内部门",
+        rect: { x: 232, y: 86, width: 24, height: 40 },
+        rule: {
+          id: "reception-door",
+          accepts: ["guidedVisitor"],
+          requiresReceptionConfirmed: true,
+        },
+        exitToNextRoom: true,
+      },
+    ],
+    items: [],
+    signalZones: [],
+    waitingZones: [
+      {
+        id: "queue-a",
+        label: "候位区",
+        rect: { x: 76, y: 144, width: 52, height: 28 },
+      },
+    ],
+    guidePaths: [
+      {
+        id: "visitor-route-b0",
+        color: "blue",
+        activeWhen: "guided",
+        tolerance: 14,
+        points: [
+          { x: 102, y: 158 },
+          { x: 132, y: 150 },
+          { x: 172, y: 136 },
+          { x: 212, y: 118 },
+          { x: 228, y: 104 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "room-2",
+    name: "服务 / 住户确认",
+    shortName: "区域 3",
+    hint: "把电池放进服务托盘，然后等待住户在门侧确认服务。",
+    signage: [
+      "主电源槽已锁定，请将服务部件放入侧边托盘。",
+      "住户服务请求必须在门侧确认。",
     ],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
@@ -83,7 +165,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-b",
-        label: "Scanner",
+        label: "扫描机",
         position: { x: 140, y: 106 },
         rule: {
           id: "scanner-b",
@@ -101,16 +183,17 @@ export const ROOMS: RoomDefinition[] = [
     residents: [
       {
         id: "resident-b",
-        label: "Resident",
+        label: "住户",
         position: { x: 168, y: 168 },
         servicePoint: { x: 188, y: 150 },
         speed: 22,
       },
     ],
+    staff: [],
     doors: [
       {
         id: "service-door",
-        label: "Service Door",
+        label: "服务门",
         rect: { x: 214, y: 86, width: 22, height: 38 },
         rule: {
           id: "service-door",
@@ -119,27 +202,39 @@ export const ROOMS: RoomDefinition[] = [
           requiresFilledSlotsExcluding: ["fault-slot"],
           requiresResidentService: true,
         },
+        alternateRules: [
+          {
+            id: "service-door-fault-visitor",
+            accepts: ["guidedVisitor"],
+            requiresTerminalMode: ["faultReport"],
+            requiresResidentService: true,
+            requiresSlowMovement: true,
+            maxScores: {
+              intruder: 7,
+            },
+          },
+        ],
         exitToNextRoom: true,
       },
     ],
     terminal: {
       id: "terminal-b",
-      label: "Service Terminal",
+      label: "服务终端",
       body: { x: 32, y: 44, width: 90, height: 86 },
       slots: [
         {
           id: "power-slot",
-          label: "Main Power",
+          label: "主电源",
           rect: { x: 66, y: 58, width: 18, height: 18 },
         },
         {
           id: "service-tray",
-          label: "Service Tray",
+          label: "服务托盘",
           rect: { x: 40, y: 102, width: 18, height: 18 },
         },
         {
           id: "fault-slot",
-          label: "Fault Slot",
+          label: "故障槽",
           rect: { x: 94, y: 102, width: 18, height: 18 },
         },
       ],
@@ -160,27 +255,28 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "battery-a",
         itemType: "battery",
-        label: "Battery A",
+        label: "电池 A",
         position: { x: 72, y: 164 },
       },
       {
         id: "battery-b",
         itemType: "battery",
-        label: "Battery B",
+        label: "电池 B",
         position: { x: 104, y: 186 },
       },
     ],
     signalZones: [],
+    waitingZones: [],
     guidePaths: [],
   },
   {
     id: "room-3",
-    name: "Archive / Escort Cost",
-    shortName: "Room 3",
-    hint: "Use maintenance access to cross the first gate, then carry the spare battery to the inspection pad to pull the escort off the route.",
+    name: "档案 / 护送代价",
+    shortName: "区域 4",
+    hint: "以维修身份穿过第一道闸门，再把备用电池送到检修台，把护送机从路线边上引开。",
     signage: [
-      "Maintenance traffic is escorted by default.",
-      "Deliver spare parts to the inspection pad before advancing.",
+      "维修流程默认附带护送。",
+      "继续前进前，先把备用部件送到检修台。",
     ],
     dimensions: {
       width: 512,
@@ -198,7 +294,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-c",
-        label: "Scanner",
+        label: "扫描机",
         position: { x: 250, y: 104 },
         rule: {
           id: "scanner-c",
@@ -213,7 +309,7 @@ export const ROOMS: RoomDefinition[] = [
       },
       {
         id: "escort-c",
-        label: "Escort",
+        label: "护送机",
         position: { x: 220, y: 104 },
         rule: {
           id: "escort-c",
@@ -224,21 +320,22 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     residents: [],
+    staff: [],
     doors: [
       {
         id: "maintenance-gate",
-        label: "Maintenance Gate",
+        label: "维修闸门",
         rect: { x: 154, y: 82, width: 22, height: 44 },
         rule: {
           id: "maintenance-gate",
           accepts: ["maintenanceCandidate"],
           requiresTerminalMode: ["maintenanceRequest"],
-          requiresSlowInDroneRange: true,
+          requiresSlowMovement: true,
         },
       },
       {
         id: "service-exit",
-        label: "Work Exit",
+        label: "作业出口",
         rect: { x: 406, y: 82, width: 22, height: 44 },
         rule: {
           id: "service-exit",
@@ -251,17 +348,17 @@ export const ROOMS: RoomDefinition[] = [
     ],
     terminal: {
       id: "terminal-c",
-      label: "Maintenance Desk",
+      label: "维修台",
       body: { x: 26, y: 42, width: 92, height: 88 },
       slots: [
         {
           id: "service-tray",
-          label: "Service Tray",
+          label: "服务托盘",
           rect: { x: 34, y: 104, width: 18, height: 18 },
         },
         {
           id: "inspection-pad",
-          label: "Inspection Pad",
+          label: "检修台",
           rect: { x: 314, y: 168, width: 20, height: 20 },
         },
       ],
@@ -277,17 +374,18 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "battery-main",
         itemType: "battery",
-        label: "Main Battery",
+        label: "主电池",
         position: { x: 76, y: 162 },
       },
       {
         id: "battery-spare",
         itemType: "battery",
-        label: "Spare Battery",
+        label: "备用电池",
         position: { x: 110, y: 182 },
       },
     ],
     signalZones: [],
+    waitingZones: [],
     guidePaths: [
       {
         id: "maint-route-c",
@@ -314,12 +412,12 @@ export const ROOMS: RoomDefinition[] = [
   },
   {
     id: "room-4",
-    name: "Observation / Identity Switch",
-    shortName: "Room 4",
-    hint: "Enter as maintenance, use the broadcast console to shed the local work order, then switch yourself back into visitor flow.",
+    name: "观察 / 身份切换",
+    shortName: "区域 5",
+    hint: "以维修身份进入，用广播台卸下本地工单，再把自己切回访客流程。",
     signage: [
-      "Maintenance tickets keep an escort attached.",
-      "Visitor exit accepts guided visitors only.",
+      "维修工单会一直带着护送。",
+      "访客出口只接受被引导的访客。",
     ],
     dimensions: {
       width: 640,
@@ -337,7 +435,7 @@ export const ROOMS: RoomDefinition[] = [
     drones: [
       {
         id: "scanner-d",
-        label: "Scanner",
+        label: "扫描机",
         position: { x: 256, y: 104 },
         rule: {
           id: "scanner-d",
@@ -352,7 +450,7 @@ export const ROOMS: RoomDefinition[] = [
       },
       {
         id: "escort-d",
-        label: "Escort",
+        label: "护送机",
         position: { x: 222, y: 104 },
         rule: {
           id: "escort-d",
@@ -363,21 +461,22 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     residents: [],
+    staff: [],
     doors: [
       {
         id: "maintenance-gate",
-        label: "Maintenance Gate",
+        label: "维修闸门",
         rect: { x: 160, y: 82, width: 22, height: 44 },
         rule: {
           id: "maintenance-gate",
           accepts: ["maintenanceCandidate"],
           requiresTerminalMode: ["maintenanceRequest"],
-          requiresSlowInDroneRange: true,
+          requiresSlowMovement: true,
         },
       },
       {
         id: "archive-exit",
-        label: "Visitor Exit",
+        label: "访客出口",
         rect: { x: 552, y: 82, width: 22, height: 44 },
         rule: {
           id: "archive-exit",
@@ -389,17 +488,17 @@ export const ROOMS: RoomDefinition[] = [
     ],
     terminal: {
       id: "terminal-d",
-      label: "Work Desk",
+      label: "作业台",
       body: { x: 26, y: 42, width: 92, height: 88 },
       slots: [
         {
           id: "service-tray",
-          label: "Service Tray",
+          label: "服务托盘",
           rect: { x: 34, y: 104, width: 18, height: 18 },
         },
         {
           id: "inspection-pad",
-          label: "Review Pad",
+          label: "复核台",
           rect: { x: 330, y: 168, width: 20, height: 20 },
         },
       ],
@@ -415,8 +514,8 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "escort-reroute-console",
         rect: { x: 360, y: 46, width: 18, height: 18 },
-        label: "Broadcast",
-        prompt: "Press E to reroute escort",
+        label: "广播台",
+        prompt: "按 E 改派护送",
         action: "rerouteEscort",
       },
     ],
@@ -424,7 +523,7 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "battery-main",
         itemType: "battery",
-        label: "Work Battery",
+        label: "作业电池",
         position: { x: 78, y: 164 },
       },
     ],
@@ -434,6 +533,7 @@ export const ROOMS: RoomDefinition[] = [
         rect: { x: 470, y: 148, width: 42, height: 30 },
       },
     ],
+    waitingZones: [],
     guidePaths: [
       {
         id: "maint-route-d",

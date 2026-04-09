@@ -47,6 +47,12 @@ export interface SignalZone {
   rect: Rect;
 }
 
+export interface WaitingZone {
+  id: string;
+  rect: Rect;
+  label: string;
+}
+
 export interface ResidentDefinition {
   id: string;
   label: string;
@@ -55,12 +61,33 @@ export interface ResidentDefinition {
   speed: number;
 }
 
+export type StaffRole = "receptionist";
+
+export type StaffMode =
+  | "idleAtDesk"
+  | "walkingToTerminal"
+  | "checkingQueue"
+  | "returningToDesk";
+
+export interface StaffDefinition {
+  id: string;
+  label: string;
+  role: StaffRole;
+  position: Vec2;
+  deskPoint: Vec2;
+  terminalPoint: Vec2;
+  speed: number;
+  idleMs: number;
+  checkMs: number;
+  waitZoneId: string;
+}
+
 export interface ConsoleDefinition {
   id: string;
   rect: Rect;
   label: string;
   prompt: string;
-  action: "primeGuidance" | "rerouteEscort";
+  action: "primeGuidance" | "registerVisitor" | "rerouteEscort";
 }
 
 export interface ItemSpawn {
@@ -93,6 +120,7 @@ export interface DoorRule {
   requiresSlowInDroneRange?: boolean;
   requiresFilledSlotsExcluding?: string[];
   requiresResidentService?: boolean;
+  requiresReceptionConfirmed?: boolean;
 }
 
 export interface DoorDefinition {
@@ -100,6 +128,7 @@ export interface DoorDefinition {
   rect: Rect;
   label: string;
   rule: DoorRule;
+  alternateRules?: DoorRule[];
   exitToNextRoom?: boolean;
 }
 
@@ -150,12 +179,14 @@ export interface RoomDefinition {
   playerSpawn: Vec2;
   drones: DroneDefinition[];
   residents: ResidentDefinition[];
+  staff?: StaffDefinition[];
   doors: DoorDefinition[];
   terminal?: TerminalDefinition;
   consoles?: ConsoleDefinition[];
   signalRequiresActivation?: boolean;
   items: ItemSpawn[];
   signalZones: SignalZone[];
+  waitingZones?: WaitingZone[];
   guidePaths: GuidePath[];
   triggers?: TriggerDefinition[];
 }
@@ -171,6 +202,7 @@ export interface PlayerIntentSnapshot {
   carryingItemType: ItemSpawn["itemType"] | null;
   terminalMode: TerminalMode;
   visibleDroneIds: string[];
+  activeWaitingZoneId?: string | null;
 }
 
 export interface DoorContext {
@@ -183,6 +215,7 @@ export interface DoorContext {
   isInDroneRange?: boolean;
   filledSlotIds?: string[];
   requiredSlotIds?: string[];
+  receptionConfirmedActive?: boolean;
 }
 
 export interface DroneContext {
@@ -209,6 +242,13 @@ export interface ResidentRuntime {
   position: Vec2;
 }
 
+export interface StaffRuntime {
+  mode: StaffMode;
+  position: Vec2;
+  stateMs: number;
+  hasConfirmedCurrentCycle: boolean;
+}
+
 export interface InterpretationResult {
   tag: InterpretationTag;
   scores: InterpretationScores;
@@ -232,6 +272,8 @@ export interface RoomRuntime {
   alertCountdownMs: number | null;
   triggeredIds: string[];
   residentStates: Record<string, ResidentRuntime>;
+  staffStates: Record<string, StaffRuntime>;
+  receptionConfirmedMs: number;
   message: string | null;
 }
 
