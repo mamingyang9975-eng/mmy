@@ -127,6 +127,8 @@ describe("door and terminal rules", () => {
         interpretation: "guidedVisitor",
         terminalMode: "none",
         escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
       }),
     ).toBe(true);
 
@@ -135,6 +137,42 @@ describe("door and terminal rules", () => {
         interpretation: "intruder",
         terminalMode: "none",
         escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("requires room two maintenance access to happen while slow inside drone range", () => {
+    const door = ROOMS[1].doors[0];
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "maintenanceCandidate",
+        terminalMode: "maintenanceRequest",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "maintenanceCandidate",
+        terminalMode: "maintenanceRequest",
+        escortActive: false,
+        movementMode: "normal",
+        isInDroneRange: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "maintenanceCandidate",
+        terminalMode: "maintenanceRequest",
+        escortActive: false,
+        movementMode: "slow",
+        isInDroneRange: false,
       }),
     ).toBe(false);
   });

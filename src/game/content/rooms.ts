@@ -69,7 +69,7 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-2",
     name: "服务层 / 制造误解",
     shortName: "房间 2",
-    hint: "终端侧托盘会把你登记成维修流量，红色槽会触发故障上报。",
+    hint: "终端侧托盘会把你登记成维修流量；进入巡逻机范围后保持慢行即可通过门禁。",
     signage: ["主电槽锁定。待检件请置于侧托盘。"],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
@@ -104,6 +104,7 @@ export const ROOMS: RoomDefinition[] = [
           id: "service-door",
           accepts: ["maintenanceCandidate"],
           requiresTerminalMode: ["maintenanceRequest"],
+          requiresSlowInDroneRange: true,
         },
         exitToNextRoom: true,
       },
@@ -157,20 +158,7 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     signalZones: [],
-    guidePaths: [
-      {
-        id: "maintenance-route",
-        color: "amber",
-        activeWhen: "maintenance",
-        tolerance: 14,
-        points: [
-          { x: 48, y: 112 },
-          { x: 92, y: 112 },
-          { x: 146, y: 110 },
-          { x: 214, y: 106 },
-        ],
-      },
-    ],
+    guidePaths: [],
   },
   {
     id: "room-3",

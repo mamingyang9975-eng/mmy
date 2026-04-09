@@ -5,10 +5,10 @@ import { ROOMS } from "../src/game/content/rooms";
 describe("canAdvanceThroughDoor", () => {
   const exitDoor = ROOMS[0].doors[0];
 
-  it("allows room transition once the player has crossed an already open exit", () => {
+  it("allows room transition as soon as the player enters an already open doorway", () => {
     expect(
       canAdvanceThroughDoor(exitDoor, true, {
-        x: exitDoor.rect.x + exitDoor.rect.width + 20,
+        x: exitDoor.rect.x + 4,
         y: exitDoor.rect.y + exitDoor.rect.height / 2,
       }),
     ).toBe(true);
@@ -17,7 +17,7 @@ describe("canAdvanceThroughDoor", () => {
   it("blocks transition when the exit was not open yet", () => {
     expect(
       canAdvanceThroughDoor(exitDoor, false, {
-        x: exitDoor.rect.x + exitDoor.rect.width + 20,
+        x: exitDoor.rect.x + 4,
         y: exitDoor.rect.y + exitDoor.rect.height / 2,
       }),
     ).toBe(false);

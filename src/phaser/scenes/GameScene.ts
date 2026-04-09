@@ -25,6 +25,7 @@ import { getUiController } from "../../ui/controllerStore";
 
 const ROOM_WIDTH = 384;
 const ROOM_HEIGHT = 216;
+const CAMERA_ZOOM = 3;
 const INTERACT_RANGE = 20;
 const INDICATE_MS = 1000;
 
@@ -109,6 +110,9 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.physics.world.setBounds(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
     this.cameras.main.setBackgroundColor(0x0f1319);
+    this.cameras.main.setBounds(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
+    this.cameras.main.roundPixels = true;
 
     this.keys = this.createKeys();
     this.createBackdrop();
@@ -717,8 +721,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncDoorStates(): void {
+    const approach = this.getDoorApproachState();
     for (const door of this.doorObjects.values()) {
-      const open = this.session.canOpenDoor(door.def);
+      const open = this.session.canOpenDoor(door.def, approach);
       if (door.open !== open) {
         this.playTone(open ? 520 : 220, open ? 0.03 : 0.02);
       }
@@ -842,6 +847,18 @@ export class GameScene extends Phaser.Scene {
         terminalMode === "maintenanceRequest"
       );
     });
+  }
+
+  private getDoorApproachState(): {
+    movementMode: "normal" | "slow";
+    isInDroneRange: boolean;
+  } {
+    return {
+      movementMode: this.keys.shift.isDown ? "slow" : "normal",
+      isInDroneRange: this.currentRoom.drones.some((drone) =>
+        this.isDroneVisible(drone),
+      ),
+    };
   }
 
   private renderIndicateRing(progress: number): void {

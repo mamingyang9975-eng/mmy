@@ -68,6 +68,7 @@ export interface DoorRule {
   accepts: InterpretationTag[];
   requiresTerminalMode?: TerminalMode[];
   deniesEscort?: boolean;
+  requiresSlowInDroneRange?: boolean;
 }
 
 export interface DoorDefinition {
@@ -148,6 +149,8 @@ export interface DoorContext {
   interpretation: InterpretationTag;
   terminalMode: TerminalMode;
   escortActive: boolean;
+  movementMode?: MovementMode;
+  isInDroneRange?: boolean;
 }
 
 export interface DroneContext {

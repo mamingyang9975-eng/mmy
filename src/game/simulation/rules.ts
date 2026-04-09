@@ -132,6 +132,13 @@ export function canDoorOpen(rule: DoorRule, context: DoorContext): boolean {
     return false;
   }
 
+  if (
+    rule.requiresSlowInDroneRange &&
+    (context.movementMode !== "slow" || !context.isInDroneRange)
+  ) {
+    return false;
+  }
+
   return true;
 }
 

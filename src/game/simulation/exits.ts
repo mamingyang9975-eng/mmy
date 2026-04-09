@@ -10,7 +10,7 @@ export function canAdvanceThroughDoor(
   }
 
   return (
-    playerPos.x > door.rect.x + door.rect.width + 12 &&
+    playerPos.x >= door.rect.x + 2 &&
     playerPos.y >= door.rect.y - 6 &&
     playerPos.y <= door.rect.y + door.rect.height + 6
   );

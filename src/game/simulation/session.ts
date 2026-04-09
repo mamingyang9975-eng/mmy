@@ -11,6 +11,7 @@ import type {
   DoorDefinition,
   DroneContext,
   DroneState,
+  MovementMode,
   PlayerIntentSnapshot,
   RoomDefinition,
   RoomRuntime,
@@ -181,12 +182,20 @@ export class GameSession {
     }
   }
 
-  canOpenDoor(door: DoorDefinition): boolean {
+  canOpenDoor(
+    door: DoorDefinition,
+    approach?: {
+      movementMode?: MovementMode;
+      isInDroneRange?: boolean;
+    },
+  ): boolean {
     const context: DoorContext = {
       interpretation: this.runtime.interpretation,
       terminalMode: this.runtime.terminalMode,
       escortActive:
         this.runtime.escortUnlocked && this.runtime.escortDistractedMs <= 0,
+      movementMode: approach?.movementMode,
+      isInDroneRange: approach?.isInDroneRange,
     };
     return canDoorOpen(door.rule, context);
   }
