@@ -36,6 +36,14 @@ export interface SignalZone {
   rect: Rect;
 }
 
+export interface ResidentDefinition {
+  id: string;
+  label: string;
+  position: Vec2;
+  servicePoint: Vec2;
+  speed: number;
+}
+
 export interface ConsoleDefinition {
   id: string;
   rect: Rect;
@@ -68,7 +76,10 @@ export interface DoorRule {
   accepts: InterpretationTag[];
   requiresTerminalMode?: TerminalMode[];
   deniesEscort?: boolean;
+  requiresSlowMovement?: boolean;
   requiresSlowInDroneRange?: boolean;
+  requiresFilledSlotsExcluding?: string[];
+  requiresResidentService?: boolean;
 }
 
 export interface DoorDefinition {
@@ -124,6 +135,7 @@ export interface RoomDefinition {
   wallRects: Rect[];
   playerSpawn: Vec2;
   drones: DroneDefinition[];
+  residents: ResidentDefinition[];
   doors: DoorDefinition[];
   terminal?: TerminalDefinition;
   consoles?: ConsoleDefinition[];
@@ -151,8 +163,11 @@ export interface DoorContext {
   interpretation: InterpretationTag;
   terminalMode: TerminalMode;
   escortActive: boolean;
+  residentServiceActive?: boolean;
   movementMode?: MovementMode;
   isInDroneRange?: boolean;
+  filledSlotIds?: string[];
+  requiredSlotIds?: string[];
 }
 
 export interface DroneContext {
@@ -170,6 +185,13 @@ export interface GuideMemory {
   remainingMs: number;
 }
 
+export type ResidentMode = "idle" | "answeringService" | "waitingAtService";
+
+export interface ResidentRuntime {
+  mode: ResidentMode;
+  position: Vec2;
+}
+
 export interface InterpretationResult {
   tag: InterpretationTag;
   guideMemory: GuideMemory;
@@ -180,13 +202,16 @@ export interface RoomRuntime {
   interpretation: InterpretationTag;
   guideMemory: GuideMemory;
   guideFieldPrimed: boolean;
+  visitorFlowUnlocked: boolean;
   placedItems: Record<string, string | null>;
+  unlockedDoorIds: string[];
   escortUnlocked: boolean;
   escortReleased: boolean;
   escortDistractedMs: number;
   alertWarningMs: number;
   alertCountdownMs: number | null;
   triggeredIds: string[];
+  residentStates: Record<string, ResidentRuntime>;
   message: string | null;
 }
 

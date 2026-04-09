@@ -5,11 +5,11 @@ const SCANNER_VISION_RADIUS = 48;
 export const ROOMS: RoomDefinition[] = [
   {
     id: "room-1",
-    name: "接入区 / 读懂系统",
+    name: "接入区 / 初始校验",
     shortName: "房间 1",
     hint: "先按 E 激活引导面板，再站到感应区里按住 Space 停留两秒示意；之后在巡逻机范围内保持慢行。",
     signage: [
-      "本设施不判断对错，仅减少表达歧义。",
+      "本设施优先处理稳定且可确认的接入行为。",
       "访客接入前，请先启用引导面板。",
     ],
     playerSpawn: { x: 48, y: 170 },
@@ -34,6 +34,7 @@ export const ROOMS: RoomDefinition[] = [
         },
       },
     ],
+    residents: [],
     doors: [
       {
         id: "north-door",
@@ -67,10 +68,10 @@ export const ROOMS: RoomDefinition[] = [
   },
   {
     id: "room-2",
-    name: "服务层 / 制造误解",
+    name: "服务层 / 住户确认",
     shortName: "房间 2",
-    hint: "终端侧托盘会把你登记成维修流量；进入巡逻机范围后保持慢行即可通过门禁。",
-    signage: ["主电槽锁定。待检件请置于侧托盘。"],
+    hint: "把电池放进侧托盘后，等居民走到门侧等候点；确认完成后，这道门才会放行维修通道。",
+    signage: ["主电槽锁定。待检件请置于侧托盘。", "住户服务请求需在门侧完成确认。"],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
       { x: 214, y: 0, width: 22, height: 86 },
@@ -94,6 +95,15 @@ export const ROOMS: RoomDefinition[] = [
         },
       },
     ],
+    residents: [
+      {
+        id: "resident-b",
+        label: "居民",
+        position: { x: 168, y: 168 },
+        servicePoint: { x: 188, y: 150 },
+        speed: 22,
+      },
+    ],
     doors: [
       {
         id: "service-door",
@@ -103,7 +113,8 @@ export const ROOMS: RoomDefinition[] = [
           id: "service-door",
           accepts: ["maintenanceCandidate"],
           requiresTerminalMode: ["maintenanceRequest"],
-          requiresSlowInDroneRange: true,
+          requiresFilledSlotsExcluding: ["fault-slot"],
+          requiresResidentService: true,
         },
         exitToNextRoom: true,
       },
@@ -161,7 +172,7 @@ export const ROOMS: RoomDefinition[] = [
   },
   {
     id: "room-3",
-    name: "归档层 / 双重后果",
+    name: "归档层 / 护送切换",
     shortName: "房间 3",
     hint: "先借维修身份穿过第一道门，再站到中段示意区里按住 Space 停留两秒，切回访客流后慢行通过出口。",
     signage: ["维修流量默认护送。离线访客请重新示意。"],
@@ -200,6 +211,7 @@ export const ROOMS: RoomDefinition[] = [
         },
       },
     ],
+    residents: [],
     doors: [
       {
         id: "maintenance-gate",
@@ -209,6 +221,7 @@ export const ROOMS: RoomDefinition[] = [
           id: "maintenance-gate",
           accepts: ["maintenanceCandidate"],
           requiresTerminalMode: ["maintenanceRequest"],
+          requiresSlowInDroneRange: true,
         },
       },
       {
@@ -267,20 +280,7 @@ export const ROOMS: RoomDefinition[] = [
         rect: { x: 234, y: 150, width: 36, height: 28 },
       },
     ],
-    guidePaths: [
-      {
-        id: "maintenance-lane",
-        color: "amber",
-        activeWhen: "maintenance",
-        tolerance: 14,
-        points: [
-          { x: 42, y: 116 },
-          { x: 92, y: 108 },
-          { x: 140, y: 106 },
-          { x: 154, y: 106 },
-        ],
-      },
-    ],
+    guidePaths: [],
     triggers: [
       {
         id: "escort-trigger",

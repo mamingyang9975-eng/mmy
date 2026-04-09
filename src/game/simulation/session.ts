@@ -15,8 +15,10 @@ import type {
   PlayerIntentSnapshot,
   RoomDefinition,
   RoomRuntime,
+  ResidentRuntime,
   SessionSnapshot,
   TerminalMode,
+  Vec2,
 } from "./types";
 
 const ALERT_RESET_MS = 5000;
@@ -29,15 +31,34 @@ function createRuntime(room: RoomDefinition): RoomRuntime {
     interpretation: "intruder",
     guideMemory: createGuideMemory(),
     guideFieldPrimed: false,
+    visitorFlowUnlocked: false,
     placedItems: Object.fromEntries(room.items.map((item) => [item.id, null])),
+    unlockedDoorIds: [],
     escortUnlocked: false,
     escortReleased: false,
     escortDistractedMs: 0,
     alertWarningMs: 0,
     alertCountdownMs: null,
     triggeredIds: [],
+    residentStates: Object.fromEntries(
+      room.residents.map((resident) => [
+        resident.id,
+        {
+          mode: "idle",
+          position: { ...resident.position },
+        } satisfies ResidentRuntime,
+      ]),
+    ),
     message: room.hint,
   };
+}
+
+function getFilledSlotIds(
+  placedItems: Record<string, string | null>,
+): string[] {
+  return Object.values(placedItems).filter(
+    (slotId): slotId is string => slotId !== null,
+  );
 }
 
 export class GameSession {
@@ -105,23 +126,34 @@ export class GameSession {
       );
     }
 
+    this.updateResidents(deltaMs);
+
     const interpretation = advanceInterpretation(
       snapshot,
       this.runtime.guideMemory,
       deltaMs,
     );
     this.runtime.guideMemory = interpretation.guideMemory;
-    this.runtime.interpretation = interpretation.tag;
+    if (interpretation.tag === "guidedVisitor") {
+      this.runtime.visitorFlowUnlocked = true;
+    }
+
+    this.runtime.interpretation =
+      this.runtime.terminalMode === "maintenanceRequest"
+        ? "maintenanceCandidate"
+        : this.runtime.visitorFlowUnlocked
+          ? "guidedVisitor"
+          : interpretation.tag;
 
     if (
       !this.runtime.escortReleased &&
       this.getRoom().id === "room-3" &&
       this.runtime.escortUnlocked &&
-      interpretation.tag === "guidedVisitor"
+      this.runtime.interpretation === "guidedVisitor"
     ) {
       this.runtime.escortReleased = true;
       this.runtime.escortDistractedMs = 0;
-      this.runtime.message = "访客流量已恢复。护送机改回独立巡查。";
+      this.runtime.message = "当前通道已切回普通访客模式。护送机改回独立巡查。";
     }
 
     const droneStates = this.getDroneStates(snapshot);
@@ -150,33 +182,30 @@ export class GameSession {
 
   placeItem(itemId: string, slotId: string | null): TerminalMode {
     const room = this.getRoom();
-    const item = room.items.find((entry) => entry.id === itemId);
-
-    if (!item) {
+    if (!room.items.some((entry) => entry.id === itemId)) {
       return this.runtime.terminalMode;
     }
 
     this.runtime.placedItems[itemId] = slotId;
+    this.runtime.terminalMode = this.resolveCurrentTerminalMode();
 
-    const terminalMode = room.terminal
-      ? resolveTerminalMode(room.terminal.recipes, slotId, item.itemType)
-      : "none";
-
-    this.runtime.terminalMode = terminalMode;
+    if (room.id === "room-3" && slotId === "service-tray") {
+      this.unlockDoor("maintenance-gate");
+    }
 
     if (room.id === "room-3" && slotId === "inspection-pad") {
       this.runtime.terminalMode = "none";
       this.runtime.escortDistractedMs = ESCORT_DISTRACT_MS;
       this.runtime.message =
-        "护送机被检修台吸引。站到中段示意区里按住 Space 停留两秒，即可切回访客流量。";
+        "护送机被检修台吸引。站到中段示意区里按住 Space 停留两秒，即可恢复普通通道权限。";
       return this.runtime.terminalMode;
     }
 
-    if (terminalMode === "faultReport") {
+    if (this.runtime.terminalMode === "faultReport") {
       this.runtime.message = "异常槽触发故障上报。";
       this.triggerAlert();
-    } else if (terminalMode === "maintenanceRequest") {
-      this.runtime.message = "系统已把你登记为维修流量。";
+    } else if (this.runtime.terminalMode === "maintenanceRequest") {
+      this.runtime.message = "服务终端已登记维修请求。";
     } else {
       this.runtime.message = room.hint;
     }
@@ -201,13 +230,7 @@ export class GameSession {
 
   clearItemPlacement(itemId: string): void {
     this.runtime.placedItems[itemId] = null;
-    if (
-      Object.values(this.runtime.placedItems).every(
-        (slotId) => slotId !== "service-tray",
-      )
-    ) {
-      this.runtime.terminalMode = "none";
-    }
+    this.runtime.terminalMode = this.resolveCurrentTerminalMode();
   }
 
   canOpenDoor(
@@ -224,10 +247,55 @@ export class GameSession {
         this.runtime.escortUnlocked &&
         !this.runtime.escortReleased &&
         this.runtime.escortDistractedMs <= 0,
+      residentServiceActive: this.hasResidentWaitingAtService(),
       movementMode: approach?.movementMode,
       isInDroneRange: approach?.isInDroneRange,
+      filledSlotIds: getFilledSlotIds(this.runtime.placedItems),
+      requiredSlotIds: this.getRoom().terminal?.slots.map((slot) => slot.id) ?? [],
     };
+
+    if (this.runtime.unlockedDoorIds.includes(door.id)) {
+      return canDoorOpen(
+        {
+          ...door.rule,
+          requiresSlowMovement: false,
+          requiresSlowInDroneRange: false,
+        },
+        context,
+      );
+    }
+
     return canDoorOpen(door.rule, context);
+  }
+
+  private unlockDoor(doorId: string): void {
+    if (!this.runtime.unlockedDoorIds.includes(doorId)) {
+      this.runtime.unlockedDoorIds.push(doorId);
+    }
+  }
+
+  private resolveCurrentTerminalMode(): TerminalMode {
+    const room = this.getRoom();
+    if (!room.terminal) {
+      return "none";
+    }
+
+    const placedModes = room.items
+      .map((item) => {
+        const slotId = this.runtime.placedItems[item.id];
+        return resolveTerminalMode(room.terminal!.recipes, slotId, item.itemType);
+      })
+      .filter((mode) => mode !== "none");
+
+    if (placedModes.includes("faultReport")) {
+      return "faultReport";
+    }
+
+    if (placedModes.includes("maintenanceRequest")) {
+      return "maintenanceRequest";
+    }
+
+    return "none";
   }
 
   markTrigger(triggerId: string): void {
@@ -248,18 +316,21 @@ export class GameSession {
     if (this.roomIndex >= ROOMS.length - 1) {
       this.complete = true;
       this.paused = true;
-      this.runtime.message = "观察室：系统只是在替你完成那些最像你的选择。";
+      this.runtime.message = "观察室：设施已经按它熟悉的流程把你一路送到了这里。";
       return false;
     }
 
-    this.roomIndex += 1;
-    this.runtime = createRuntime(this.getRoom());
-    this.paused = false;
+    this.enterRoom(this.roomIndex + 1);
     return true;
   }
 
   resetRoom(): void {
-    this.runtime = createRuntime(this.getRoom());
+    this.enterRoom(this.roomIndex);
+  }
+
+  private enterRoom(roomIndex: number): void {
+    this.roomIndex = roomIndex;
+    this.runtime = createRuntime(ROOMS[this.roomIndex]);
     this.paused = false;
   }
 
@@ -269,7 +340,74 @@ export class GameSession {
     }
     this.runtime.alertWarningMs = 0;
     this.runtime.alertCountdownMs = ALERT_RESET_MS;
-    this.runtime.message = "已被标记为入侵者。";
+      this.runtime.message = "当前区域已转入高警戒。";
+  }
+
+  private updateResidents(deltaMs: number): void {
+    const room = this.getRoom();
+    if (room.residents.length === 0) {
+      return;
+    }
+
+    const serviceShouldBeActive =
+      this.runtime.terminalMode === "maintenanceRequest" &&
+      this.runtime.alertCountdownMs === null;
+
+    for (const resident of room.residents) {
+      const runtimeState = this.runtime.residentStates[resident.id];
+      if (!runtimeState) {
+        continue;
+      }
+
+      const target = serviceShouldBeActive
+        ? resident.servicePoint
+        : resident.position;
+      const nextPosition = moveTowards(
+        runtimeState.position,
+        target,
+        resident.speed,
+        deltaMs,
+      );
+
+      runtimeState.position = nextPosition;
+
+      if (samePoint(nextPosition, target)) {
+        runtimeState.mode = serviceShouldBeActive
+          ? "waitingAtService"
+          : "idle";
+      } else if (serviceShouldBeActive) {
+        runtimeState.mode = "answeringService";
+      } else {
+        runtimeState.mode = "idle";
+      }
+    }
+
+    if (room.id !== "room-2") {
+      return;
+    }
+
+    const waiting = this.hasResidentWaitingAtService();
+
+    if (waiting && this.runtime.terminalMode === "maintenanceRequest") {
+      this.runtime.message =
+        "居民已到服务等候点。门侧确认完成，维修通道已准备放行。";
+      return;
+    }
+
+    if (
+      serviceShouldBeActive &&
+      Object.values(this.runtime.residentStates).some(
+        (resident) => resident.mode === "answeringService",
+      )
+    ) {
+      this.runtime.message = "居民正在响应服务请求，等它到达门侧等候点。";
+    }
+  }
+
+  private hasResidentWaitingAtService(): boolean {
+    return Object.values(this.runtime.residentStates).some(
+      (resident) => resident.mode === "waitingAtService",
+    );
   }
 
   private updateAlertWarning(
@@ -301,8 +439,15 @@ export class GameSession {
   }
 
   private getDefaultMessage(): string {
+    if (
+      this.getRoom().id === "room-2" &&
+      this.runtime.terminalMode === "maintenanceRequest" &&
+      this.hasResidentWaitingAtService()
+    ) {
+      return "居民已在门侧确认服务。保持慢行，沿维修通道通过。";
+    }
     if (this.runtime.terminalMode === "maintenanceRequest") {
-      return "系统已把你登记为维修流量。";
+      return "服务终端已登记维修请求。";
     }
     if (this.runtime.guideFieldPrimed) {
       return "引导面板已激活。现在站到感应区里按住 Space 停留两秒示意，然后在巡逻机范围内慢行。";
@@ -333,4 +478,31 @@ export class GameSession {
 
     return states;
   }
+}
+
+function moveTowards(
+  from: Vec2,
+  to: Vec2,
+  speed: number,
+  deltaMs: number,
+): Vec2 {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  if (distance === 0) {
+    return { ...to };
+  }
+
+  const step = (speed * deltaMs) / 1000;
+  if (step >= distance) {
+    return { ...to };
+  }
+
+  const ratio = step / distance;
+  return {
+    x: from.x + (to.x - from.x) * ratio,
+    y: from.y + (to.y - from.y) * ratio,
+  };
+}
+
+function samePoint(a: Vec2, b: Vec2): boolean {
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
 }

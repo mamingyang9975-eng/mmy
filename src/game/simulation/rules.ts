@@ -14,6 +14,8 @@ import type {
 
 const GUIDE_MEMORY_MS = 3600;
 const FAST_SPEED_THRESHOLD = 90;
+export const SLOW_SPEED_LIMIT = 56;
+export const NORMAL_SPEED_LIMIT = 84;
 
 export function createGuideMemory(): GuideMemory {
   return { remainingMs: 0 };
@@ -43,10 +45,7 @@ export function advanceInterpretation(
     remainingMs = GUIDE_MEMORY_MS;
   }
 
-  if (
-    remainingMs > 0 &&
-    snapshot.movementMode === "slow"
-  ) {
+  if (remainingMs > 0) {
     return {
       tag: "guidedVisitor",
       guideMemory: { remainingMs },
@@ -135,11 +134,30 @@ export function canDoorOpen(rule: DoorRule, context: DoorContext): boolean {
     return false;
   }
 
+  if (rule.requiresResidentService && !context.residentServiceActive) {
+    return false;
+  }
+
+  if (rule.requiresSlowMovement && context.movementMode !== "slow") {
+    return false;
+  }
+
   if (
     rule.requiresSlowInDroneRange &&
     (context.movementMode !== "slow" || !context.isInDroneRange)
   ) {
     return false;
+  }
+
+  if (rule.requiresFilledSlotsExcluding) {
+    const filledSlots = new Set(context.filledSlotIds ?? []);
+    const requiredSlots = (context.requiredSlotIds ?? []).filter(
+      (slotId) => !rule.requiresFilledSlotsExcluding?.includes(slotId),
+    );
+
+    if (requiredSlots.some((slotId) => !filledSlots.has(slotId))) {
+      return false;
+    }
   }
 
   return true;
@@ -162,5 +180,5 @@ export function resolveTerminalMode(
 }
 
 export function getSpeedLimit(mode: PlayerIntentSnapshot["movementMode"]): number {
-  return mode === "slow" ? 64 : 124;
+  return mode === "slow" ? SLOW_SPEED_LIMIT : NORMAL_SPEED_LIMIT;
 }

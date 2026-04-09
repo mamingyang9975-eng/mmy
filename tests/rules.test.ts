@@ -49,7 +49,7 @@ describe("advanceInterpretation", () => {
     expect(follow.tag).toBe("guidedVisitor");
   });
 
-  it("keeps guidedVisitor while guide memory is active and the player stays slow", () => {
+  it("keeps guidedVisitor while guide memory is active even after resuming normal movement", () => {
     const guided = advanceInterpretation(
       {
         movementMode: "slow",
@@ -69,7 +69,7 @@ describe("advanceInterpretation", () => {
 
     const follow = advanceInterpretation(
       {
-        movementMode: "slow",
+        movementMode: "normal",
         speed: 48,
         isIndicating: false,
         isInSignalZone: false,
@@ -225,16 +225,21 @@ describe("door and terminal rules", () => {
     ).toBe(false);
   });
 
-  it("requires room two maintenance access to happen while slow inside drone range", () => {
+  it("allows room two maintenance access once both required slots are filled", () => {
     const door = ROOMS[1].doors[0];
+    const requiredSlotIds = ROOMS[1].terminal?.slots.map((slot) => slot.id) ?? [];
+    const filledSlotIds = ["power-slot", "service-tray"];
 
     expect(
       canDoorOpen(door.rule, {
         interpretation: "maintenanceCandidate",
         terminalMode: "maintenanceRequest",
         escortActive: false,
+        residentServiceActive: true,
         movementMode: "slow",
         isInDroneRange: true,
+        filledSlotIds,
+        requiredSlotIds,
       }),
     ).toBe(true);
 
@@ -243,10 +248,26 @@ describe("door and terminal rules", () => {
         interpretation: "maintenanceCandidate",
         terminalMode: "maintenanceRequest",
         escortActive: false,
+        residentServiceActive: true,
         movementMode: "normal",
         isInDroneRange: true,
+        filledSlotIds,
+        requiredSlotIds,
       }),
-    ).toBe(false);
+    ).toBe(true);
+
+    expect(
+      canDoorOpen(door.rule, {
+        interpretation: "maintenanceCandidate",
+        terminalMode: "maintenanceRequest",
+        escortActive: false,
+        residentServiceActive: true,
+        movementMode: "slow",
+        isInDroneRange: false,
+        filledSlotIds,
+        requiredSlotIds,
+      }),
+    ).toBe(true);
 
     expect(
       canDoorOpen(door.rule, {
@@ -254,7 +275,9 @@ describe("door and terminal rules", () => {
         terminalMode: "maintenanceRequest",
         escortActive: false,
         movementMode: "slow",
-        isInDroneRange: false,
+        isInDroneRange: true,
+        filledSlotIds: ["service-tray"],
+        requiredSlotIds,
       }),
     ).toBe(false);
   });
@@ -343,6 +366,96 @@ describe("GameSession", () => {
     expect(guided.tag).toBe("guidedVisitor");
   });
 
+  it("keeps room one visitor identity after leaving scanner range", () => {
+    const session = new GameSession();
+    session.start();
+    session.activateConsole("guide-console-a");
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: ["scanner-a"],
+      },
+      16,
+    );
+
+    const states = session.updateIntent(
+      {
+        movementMode: "normal",
+        speed: 72,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+      },
+      300,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.interpretation).toBe("guidedVisitor");
+    expect(states["scanner-a"]).toBe("Observe");
+    expect(
+      session.canOpenDoor(ROOMS[0].doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps room one visitor identity after guide memory would normally expire", () => {
+    const session = new GameSession();
+    session.start();
+    session.activateConsole("guide-console-a");
+
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: ["scanner-a"],
+      },
+      16,
+    );
+
+    session.updateIntent(
+      {
+        movementMode: "normal",
+        speed: 72,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+      },
+      5000,
+    );
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.visitorFlowUnlocked).toBe(true);
+    expect(snapshot.runtime.interpretation).toBe("guidedVisitor");
+  });
+
   it("spawns the escort flow in room three and resets room state", () => {
     const session = new GameSession();
     session.start();
@@ -366,6 +479,128 @@ describe("GameSession", () => {
     expect(snapshot.runtime.escortReleased).toBe(false);
     expect(snapshot.runtime.terminalMode).toBe("none");
     expect(snapshot.runtime.triggeredIds).toHaveLength(0);
+  });
+
+  it("unlocks room three maintenance gate after the service tray battery is placed", () => {
+    const session = new GameSession();
+    session.start();
+    session.goToNextRoom();
+    session.goToNextRoom();
+
+    expect(
+      session.canOpenDoor(ROOMS[2].doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(false);
+
+    session.placeItem("battery-main", "service-tray");
+    session.updateIntent(
+      {
+        movementMode: "normal",
+        speed: 72,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "maintenanceRequest",
+        visibleDroneIds: [],
+      },
+      16,
+    );
+
+    expect(
+      session.canOpenDoor(ROOMS[2].doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("closes room three maintenance gate again after the player switches to visitor flow", () => {
+    const session = new GameSession();
+    session.start();
+    session.goToNextRoom();
+    session.goToNextRoom();
+
+    session.placeItem("battery-main", "service-tray");
+    session.markTrigger("escort-trigger");
+    session.placeItem("battery-spare", "inspection-pad");
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: ["escort-c"],
+      },
+      16,
+    );
+
+    expect(session.getSnapshot().runtime.interpretation).toBe("guidedVisitor");
+    expect(
+      session.canOpenDoor(ROOMS[2].doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not unlock room three maintenance gate from the inspection pad alone", () => {
+    const session = new GameSession();
+    session.start();
+    session.goToNextRoom();
+    session.goToNextRoom();
+
+    session.placeItem("battery-spare", "inspection-pad");
+
+    expect(
+      session.canOpenDoor(ROOMS[2].doors[0], {
+        movementMode: "normal",
+        isInDroneRange: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("resets interpretation and terminal mode when entering room three", () => {
+    const session = new GameSession();
+    session.start();
+    session.goToNextRoom();
+
+    session.placeItem("battery-a", "service-tray");
+    session.updateIntent(
+      {
+        movementMode: "slow",
+        speed: 0,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: false,
+        signalEnabled: false,
+        carryingItemType: null,
+        terminalMode: "maintenanceRequest",
+        visibleDroneIds: [],
+      },
+      16,
+    );
+    let snapshot = session.getSnapshot();
+    expect(snapshot.runtime.interpretation).toBe("maintenanceCandidate");
+    expect(snapshot.runtime.terminalMode).toBe("maintenanceRequest");
+
+    session.goToNextRoom();
+    snapshot = session.getSnapshot();
+
+    expect(snapshot.room.id).toBe("room-3");
+    expect(snapshot.runtime.interpretation).toBe("intruder");
+    expect(snapshot.runtime.terminalMode).toBe("none");
+    expect(snapshot.runtime.guideMemory.remainingMs).toBe(0);
   });
 
   it("releases the escort after room three signal completion", () => {
@@ -449,11 +684,12 @@ describe("GameSession", () => {
     expect(session.getSnapshot().runtime.alertCountdownMs).toBeGreaterThan(0);
   });
 
-  it("still requires slow movement for room two maintenance access", () => {
+  it("keeps room two maintenance access open without forcing slow movement", () => {
     const session = new GameSession();
     session.start();
     session.goToNextRoom();
     session.placeItem("battery-a", "service-tray");
+    session.placeItem("battery-b", "power-slot");
 
     let states = session.updateIntent(
       {
@@ -468,7 +704,7 @@ describe("GameSession", () => {
         terminalMode: "maintenanceRequest",
         visibleDroneIds: ["scanner-b"],
       },
-      16,
+      1500,
     );
 
     expect(session.getSnapshot().runtime.interpretation).toBe("maintenanceCandidate");
@@ -478,12 +714,12 @@ describe("GameSession", () => {
         movementMode: "normal",
         isInDroneRange: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
 
     states = session.updateIntent(
       {
         movementMode: "slow",
-        speed: 64,
+        speed: 56,
         isIndicating: false,
         isInSignalZone: false,
         isInGuideRange: false,
@@ -501,7 +737,7 @@ describe("GameSession", () => {
     expect(
       session.canOpenDoor(ROOMS[1].doors[0], {
         movementMode: "slow",
-        isInDroneRange: true,
+        isInDroneRange: false,
       }),
     ).toBe(true);
   });

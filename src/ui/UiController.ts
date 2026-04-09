@@ -36,23 +36,23 @@ export class UiController {
 
     const hud = document.createElement("aside");
     hud.className = "hud-panel";
-    hud.setAttribute("aria-label", "解释面板");
+    hud.setAttribute("aria-label", "状态面板");
 
     const hudHeader = document.createElement("div");
     hudHeader.className = "hud-header";
     const hudEyebrow = document.createElement("div");
     hudEyebrow.className = "hud-eyebrow";
-    hudEyebrow.textContent = "解释面板";
+    hudEyebrow.textContent = "状态面板";
     const hudTitle = document.createElement("h2");
     hudTitle.className = "hud-title";
-    hudTitle.textContent = "设施读数";
+    hudTitle.textContent = "设施监控";
     hudHeader.append(hudEyebrow, hudTitle);
 
     const hudScroll = document.createElement("div");
     hudScroll.className = "hud-scroll";
 
     this.roomValue = this.createMetric(hudScroll, "当前区域");
-    this.identityValue = this.createMetric(hudScroll, "被解释为");
+    this.identityValue = this.createMetric(hudScroll, "当前身份");
     this.terminalValue = this.createMetric(hudScroll, "局部模式");
     this.carryValue = this.createMetric(hudScroll, "携带物");
 
@@ -95,15 +95,16 @@ export class UiController {
 
   showIntro(): void {
     this.showModal(
-      "误读设施",
+      "接入设施",
       [
-        "你正闯入一座会自动解释行为的设施。",
+        "你正潜入一座会持续校验身份与流程的设施。",
+        "先在入口外和同伴完成交接，再穿过外门进入设施。",
         "目标：深入设施，找到失联的同伴。",
         "操作：WASD 移动，Shift 慢行，E 拾取/放置，Space 停留示意，R 重置当前房间，Esc 暂停。",
       ],
       [
         {
-          label: "开始原型",
+          label: "开始潜入",
           action: () => this.commands?.start(),
           primary: true,
         },
@@ -135,8 +136,8 @@ export class UiController {
     this.showModal(
       "观察室",
       [
-        "你一路通关，靠的不是躲开系统，而是让系统把你当成另一种对象。",
-        "这里的问题从来不只是误解，而是当理解足够顺滑时，谁还拥有改变自己表达的权利。",
+        "你一路深入设施，靠的不只是躲避巡查，更是顺着它的流程一路通过。",
+        "当一套系统能替所有人安排位置时，真正稀缺的反而是偏离流程的余地。",
       ],
       [
         {
