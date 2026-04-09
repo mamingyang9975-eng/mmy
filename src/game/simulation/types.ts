@@ -53,6 +53,17 @@ export interface WaitingZone {
   label: string;
 }
 
+export type ClueStyle = "clipboard" | "sticker" | "ledger";
+
+export interface ClueDefinition {
+  id: string;
+  rect: Rect;
+  label: string;
+  title: string;
+  body: string[];
+  style: ClueStyle;
+}
+
 export interface ResidentDefinition {
   id: string;
   label: string;
@@ -193,6 +204,7 @@ export interface RoomDefinition {
   doors: DoorDefinition[];
   terminal?: TerminalDefinition;
   consoles?: ConsoleDefinition[];
+  clues?: ClueDefinition[];
   signalRequiresActivation?: boolean;
   items: ItemSpawn[];
   signalZones: SignalZone[];
@@ -287,6 +299,37 @@ export interface CompletionSummary {
   records: CompletionRecord[];
 }
 
+export interface ArchiveEntry {
+  entryReason: "subject-still-core";
+  fromRoomId: string;
+  subjectName: string;
+  phoneThreadSeed: PhoneThreadSummary;
+}
+
+export type ArchiveStageId =
+  | "entryPhone"
+  | "blueprint"
+  | "dossier"
+  | "languageEngine"
+  | "endingChoice"
+  | "endingSummary";
+
+export interface ArchiveStageSnapshot {
+  stageId: ArchiveStageId;
+  roomName: string;
+  stageLabel: string;
+  evidence: string;
+  controls: string;
+  progress: string;
+  hint: string;
+}
+
+export type ArchiveEndingId = "publish-records" | "cut-core";
+
+export interface ArchiveCompletionSummary extends CompletionSummary {
+  endingId: ArchiveEndingId;
+}
+
 export interface RoomRuntime {
   terminalMode: TerminalMode;
   interpretation: InterpretationTag;
@@ -319,5 +362,6 @@ export interface SessionSnapshot {
   runtime: RoomRuntime;
   isPaused: boolean;
   isComplete: boolean;
+  archiveEntry: ArchiveEntry | null;
   completion: CompletionSummary | null;
 }

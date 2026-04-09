@@ -57,6 +57,7 @@ export class UiController {
   private readonly modalBody: HTMLElement;
   private readonly modalActions: HTMLElement;
   private readonly phoneButton: HTMLButtonElement;
+  private readonly skipPreludeHint: HTMLDivElement;
   private lastPhoneMessage: PhoneMessageData | null = null;
   private activeModal: ModalState = "hidden";
 
@@ -77,8 +78,9 @@ export class UiController {
     overlayTop.className = "game-overlay-top";
     const statusStrip = document.createElement("div");
     statusStrip.className = "game-status-strip";
-    this.overlayIdentityValue = this.createOverlayMetric(statusStrip, "系统读法");
-    this.overlayTendencyValue = this.createOverlayMetric(statusStrip, "最近信号");
+    this.overlayIdentityValue = this.createOverlayMetric(statusStrip, "系统印象");
+    this.overlayTendencyValue = document.createElement("span");
+    this.overlayTendencyValue.hidden = true;
     overlayTop.append(statusStrip);
 
     const overlayBottom = document.createElement("div");
@@ -90,39 +92,46 @@ export class UiController {
     this.phoneButton.hidden = true;
     this.phoneButton.disabled = true;
     this.phoneButton.addEventListener("click", () => this.reopenPhone());
-    overlayBottom.append(this.phoneButton);
+    const rightActions = document.createElement("div");
+    rightActions.className = "game-overlay-actions-right";
+    this.skipPreludeHint = document.createElement("div");
+    this.skipPreludeHint.className = "game-skip-hint";
+    this.skipPreludeHint.textContent = "按 K 跳过";
+    this.skipPreludeHint.hidden = true;
+    rightActions.append(this.skipPreludeHint);
+    overlayBottom.append(this.phoneButton, rightActions);
 
     gameOverlay.append(overlayTop, overlayBottom);
     gameRoot.append(gameOverlay);
 
     const hud = document.createElement("aside");
     hud.className = "hud-panel";
-    hud.setAttribute("aria-label", "读法面板");
+    hud.setAttribute("aria-label", "观察记录");
 
     const hudHeader = document.createElement("div");
     hudHeader.className = "hud-header";
     const hudEyebrow = document.createElement("div");
     hudEyebrow.className = "hud-eyebrow";
-    hudEyebrow.textContent = "读法面板";
+    hudEyebrow.textContent = "观察记录";
     const hudTitle = document.createElement("h2");
     hudTitle.className = "hud-title";
-    hudTitle.textContent = "正在发生什么";
+    hudTitle.textContent = "你注意到";
     hudHeader.append(hudEyebrow, hudTitle);
 
     const hudScroll = document.createElement("div");
     hudScroll.className = "hud-scroll";
 
-    this.roomValue = this.createMetric(hudScroll, "区域");
-    this.identityValue = this.createMetric(hudScroll, "当前读法");
-    this.tendencyValue = this.createMetric(hudScroll, "偏向");
-    this.terminalValue = this.createMetric(hudScroll, "流程标签");
-    this.carryValue = this.createMetric(hudScroll, "携带");
+    this.roomValue = this.createMetric(hudScroll, "此地");
+    this.identityValue = this.createMetric(hudScroll, "系统印象");
+    this.tendencyValue = this.createMetric(hudScroll, "走势");
+    this.terminalValue = this.createMetric(hudScroll, "挂着什么");
+    this.carryValue = this.createMetric(hudScroll, "手里带着");
 
     const hintWrap = document.createElement("div");
     hintWrap.className = "hint-wrap";
     const hintLabel = document.createElement("div");
     hintLabel.className = "metric-label";
-    hintLabel.textContent = "最近信号";
+    hintLabel.textContent = "最新线索";
     this.hintValue = document.createElement("div");
     this.hintValue.className = "hint-value";
     hintWrap.append(hintLabel, this.hintValue);
@@ -221,10 +230,28 @@ export class UiController {
     );
   }
 
+  showClue(
+    title: string,
+    paragraphs: string[],
+    onClose: () => void,
+  ): void {
+    this.showModal(title, paragraphs, [
+      {
+        label: "收起纸页",
+        action: onClose,
+        primary: true,
+      },
+    ]);
+  }
+
   hideModal(): void {
     this.modal.className = "modal hidden";
     this.activeModal = "hidden";
     this.updatePhoneButton();
+  }
+
+  setPreludeSkipHintVisible(visible: boolean): void {
+    this.skipPreludeHint.hidden = !visible;
   }
 
   private showPhoneMessage(

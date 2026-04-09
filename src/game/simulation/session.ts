@@ -9,6 +9,7 @@ import {
   resolveTerminalMode,
 } from "./rules";
 import type {
+  ArchiveEntry,
   CompletionSummary,
   DoorContext,
   DoorDefinition,
@@ -90,39 +91,20 @@ function getFilledSlotIds(
   );
 }
 
-function createCompletionSummary(): CompletionSummary {
+function createArchiveEntry(subjectName: string): ArchiveEntry {
   return {
-    title: "门外 / 已领出",
-    paragraphs: [
-      "签出台最后承认的不是一次闯出，而是一次合法领出。你把阿述从设施内部的定义里重新写回了可以被带走的人。",
-      "外面的信号重新落到手机上。那些和系统无关的零碎东西也一起回来: 未接来电、项目消息、共享位置、旧语音。它们重新证明阿述在这里外面还有生活。",
-    ],
-    phone: {
+    entryReason: "subject-still-core",
+    fromRoomId: "room-6",
+    subjectName,
+    phoneThreadSeed: {
       sender: "接应人",
       messages: [
-        "你们出来了。别停，往路灯底下走。",
-        "阿述刚上车的时候一直没说话，只把那张签出回执攥得很紧。",
-        "信号恢复后，他外面的记录一下全回来了。我转给你，看着像碎事，但这些比里面那套编号更像他。",
+        "你们出来了吗？出口那边的静默刚刚断了一下。",
+        `${subjectName}的名字短暂回到了签出名单里，像是流程先认了这次带离。`,
+        "先别松手。这个地方有时候会先给你一个合法结果，再在下一秒把它收回去。",
       ],
-      footer: "先看回执里的外部记录，或者关掉弹窗后从左下角重新打开手机。",
+      footer: "收起手机后继续离开，系统可能还会补一次内部判定。",
     },
-    records: [
-      {
-        label: "签出回执",
-        value: "对象: 阿述 / 状态: 已领出",
-        detail: "系统最终承认了这次带离，不再把他留在隔离位。",
-      },
-      {
-        label: "恢复信号",
-        value: "未接来电 1 条，项目消息 2 条，共享位置 1 个",
-        detail: "一离开内层屏蔽，外部生活立刻挤回你的手机。",
-      },
-      {
-        label: "阿述的外部痕迹",
-        value: "旧语音转写: 出来以后先去吃点热的。",
-        detail: "不是样本、编号或观察对象，而是会惦记夜里吃什么的人。",
-      },
-    ],
   };
 }
 
@@ -131,6 +113,7 @@ export class GameSession {
   private runtime = createRuntime(ROOMS[0]);
   private paused = true;
   private complete = false;
+  private archiveEntry: ArchiveEntry | null = null;
   private completion: CompletionSummary | null = null;
 
   getSnapshot(): SessionSnapshot {
@@ -140,6 +123,7 @@ export class GameSession {
       runtime: this.runtime,
       isPaused: this.paused,
       isComplete: this.complete,
+      archiveEntry: this.archiveEntry,
       completion: this.completion,
     };
   }
@@ -443,11 +427,13 @@ export class GameSession {
 
   goToNextRoom(): boolean {
     if (this.roomIndex >= ROOMS.length - 1) {
-      this.complete = true;
+      if (!this.archiveEntry) {
+        const resident = this.getRoom().residents[0];
+        this.archiveEntry = createArchiveEntry(resident?.label ?? "阿述");
+      }
       this.paused = true;
-      this.completion = createCompletionSummary();
       this.runtime.message =
-        "门外：阿述已经跟着你出来了，外部信号正在回到手机上。";
+        "签出出口先认了这次离开，下一轮内部判定却还没有结束。";
       return false;
     }
 
@@ -462,6 +448,7 @@ export class GameSession {
   private enterRoom(roomIndex: number): void {
     this.roomIndex = roomIndex;
     this.runtime = createRuntime(ROOMS[this.roomIndex]);
+    this.archiveEntry = null;
     this.completion = null;
     this.runtime.message = this.getDefaultMessage();
     this.paused = false;
@@ -1010,20 +997,20 @@ export class GameSession {
 
     if (room.id === "room-1") {
       return this.runtime.visitorFlowUnlocked
-        ? "系统里已经有你的访客记录。"
-        : "这一区先比对登记。";
+        ? "登记记录已经亮起来了。"
+        : "门禁先看登记记录。";
     }
 
     if (room.id === "room-1b") {
       return this.runtime.receptionConfirmedMs > 0
-        ? "接待确认还在生效。"
-        : "前台确认之前，内部门不认你。";
+        ? "前台刚点过头。"
+        : "前台还没替你说话。";
     }
 
     if (room.id === "room-2" && this.runtime.porterFlowMs > 0) {
       return this.runtime.terminalMode === "maintenanceRequest"
-        ? "后勤节奏和工单都在替你背书。"
-        : "后勤节奏正在替你背书。";
+        ? "后勤节奏和工单都在替你遮掩。"
+        : "后勤节奏正在替你遮掩。";
     }
 
     if (
@@ -1031,11 +1018,11 @@ export class GameSession {
       this.runtime.terminalMode === "maintenanceRequest" &&
       this.hasResidentWaitingAtService()
     ) {
-      return "住户确认后，服务门会认这张工单。";
+      return "门侧确认之后，服务门才会认这张工单。";
     }
 
     if (room.id === "room-2" && this.runtime.terminalMode === "faultReport") {
-      return "故障上报把注意力拉向了服务门。";
+      return "故障上报把视线拉向了服务门。";
     }
 
     if (
@@ -1043,7 +1030,7 @@ export class GameSession {
       this.runtime.escortUnlocked &&
       this.runtime.escortDistractedMs <= 0
     ) {
-      return "维修读法还在，但护送会卡住作业出口。";
+      return "维修身份还在，但护送机会让出口变谨慎。";
     }
 
     if (
@@ -1051,29 +1038,29 @@ export class GameSession {
       this.runtime.archiveReviewMs > 0 &&
       this.runtime.terminalMode === "none"
     ) {
-      return "档案员正在复核你的记录。保持慢行并停在示意区，让系统把你重新写成访客。";
+      return "档案员在复核。示意区和慢行会把记录往访客那边推。";
     }
 
     if (room.id === "room-5") {
       return this.runtime.officeClearanceMs > 0
-        ? "值班许可已经写入。保持慢行，从值班出口离开这一层。"
-        : "去交接区站定，等夜班文员把你记进值班流程。";
+        ? "值班许可已经写入。出口现在更像在等你。"
+        : "夜班文员还没把你写进交接记录。";
     }
 
     if (room.id === "room-6") {
       if (this.runtime.subjectReleased && this.hasResidentWaitingAtService()) {
-        return "阿述已经到签出点了。慢慢走向出口，把他从这里带出去。";
+        return "阿述已经到签出点了。出口现在只看你们像不像一组。";
       }
 
       if (this.runtime.subjectReleased) {
-        return "阿述正在被转到签出点。别乱动，等流程把他送出来。";
+        return "阿述正被送往签出点。流程还没走完。";
       }
 
       if (this.runtime.interpretation === "guidedVisitor") {
-        return "签出台现在认你了。去按 E 发起阿述的领出。";
+        return "签出台开始认你了。领出动作现在会被记录。";
       }
 
-      return "先在签出区完成示意，让系统把你写成合法领出对象。";
+      return "签出区还没把你写成合法领出对象。";
     }
 
     if (
@@ -1082,7 +1069,7 @@ export class GameSession {
       !this.runtime.escortReleased &&
       this.runtime.terminalMode === "maintenanceRequest"
     ) {
-      return "维修工单还在，出口不会把你认成访客。";
+      return "工单还挂着，出口不会把你当成访客。";
     }
 
     if (
@@ -1090,26 +1077,26 @@ export class GameSession {
       this.runtime.escortReroutedMs > 0 &&
       this.runtime.terminalMode === "none"
     ) {
-      return "护送被暂时支开了，系统正在重新读你。";
+      return "护送刚被支开，系统正在重新打量你。";
     }
 
     if (this.runtime.terminalMode === "maintenanceRequest") {
-      return "维修工单正在替你说话。";
+      return "维修工单还在替你说话。";
     }
 
     if (this.runtime.guideFieldPrimed) {
-      return "引导区会帮你被读成访客。";
+      return "引导区会把你往访客那边推。";
     }
 
     const { guidedVisitor, maintenanceCandidate, intruder } =
       this.runtime.interpretationScores;
     if (maintenanceCandidate >= guidedVisitor && maintenanceCandidate >= intruder) {
-      return "系统更偏向维修读法。";
+      return "系统现在更像把你看成维修。";
     }
     if (guidedVisitor >= intruder) {
-      return "系统更偏向访客读法。";
+      return "系统现在更像把你看成访客。";
     }
-    return "系统还把你往闯入那边读。";
+    return "系统仍把你往闯入者那边看。";
   }
 
   private getAlertWarningMessage(snapshot: PlayerIntentSnapshot): string {

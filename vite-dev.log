@@ -467,3 +467,17 @@ C:/Users/zaish/Documents/mmy/src/ui/UiController.ts:206:24: ERROR: Expected ")" 
 [2m01:27:54[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
 [2m01:32:31[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
 [2m01:36:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:39:42[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m01:39:53[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m01:40:01[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:47:37[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m01:47:37[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:47:37[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m01:47:37[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m01:51:40[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/ui/UiController.ts[22m
+[2m01:51:59[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/content/rooms.ts[22m
+[2m01:52:15[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:52:25[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:52:36[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m
+[2m01:52:43[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/game/simulation/session.ts[22m
+[2m01:54:21[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2msrc/phaser/scenes/GameScene.ts[22m

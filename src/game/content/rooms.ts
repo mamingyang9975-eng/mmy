@@ -7,10 +7,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-1",
     name: "接入 / 访客登记",
     shortName: "区域 1",
-    hint: "先到登记面板完成访客登记，再从访客门通过。",
+    hint: "门禁先看登记记录。先观察登记面板和访客门各自认什么。",
     signage: [
-      "系统会先比对登记记录，再判定你的身份。",
-      "靠近访客门前，先完成访客登记。",
+      "访客记录缺失，门禁保持关闭。",
+      "接入对象状态：待登记。",
     ],
     playerSpawn: { x: 48, y: 170 },
     wallRects: [
@@ -64,10 +64,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-1b",
     name: "接待 / 缓冲确认",
     shortName: "区域 2",
-    hint: "登记只说明你来过。去候位区站定，等前台把你接进流程。",
+    hint: "登记只是第一层。前台点头之前，内部门不会跟着改口。",
     signage: [
-      "请在候位区等待人工确认。",
-      "确认完成前，请勿靠近内部门。",
+      "候位区用于人工确认。",
+      "确认序列未完成，内部门保持锁闭。",
     ],
     dimensions: {
       width: 448,
@@ -124,6 +124,19 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     items: [],
+    clues: [
+      {
+        id: "reception-note",
+        rect: { x: 144, y: 152, width: 18, height: 12 },
+        label: "前台晚班夹",
+        title: "前台晚班备注",
+        body: [
+          "候位区内静止等待的对象，优先补录到本轮接待名单。",
+          "未进入候位区的来访对象，不写入内部门可见记录。",
+        ],
+        style: "clipboard",
+      },
+    ],
     signalZones: [],
     waitingZones: [
       {
@@ -152,11 +165,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-2",
     name: "服务 / 住户确认",
     shortName: "区域 3",
-    hint: "把电池放进服务托盘，然后等待住户在门侧确认服务。",
+    hint: "服务门盯着的不止是工单。门侧那一位也在决定你像谁。",
     signage: [
       "主电源槽已锁定，请将服务部件放入侧边托盘。",
-      "住户服务请求必须在门侧确认。",
-      "补给流转对象请保持缓行，勿偏离工作线。",
+      "服务确认来自门侧住户。",
     ],
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
@@ -288,6 +300,19 @@ export const ROOMS: RoomDefinition[] = [
         position: { x: 104, y: 186 },
       },
     ],
+    clues: [
+      {
+        id: "porter-slip",
+        rect: { x: 142, y: 182, width: 18, height: 12 },
+        label: "后勤交接单",
+        title: "后勤口临时交接单",
+        body: [
+          "搬运电池的缓行对象，可按后勤协作处理。",
+          "服务门只在门边确认到住户响应后，才继续放行。",
+        ],
+        style: "sticker",
+      },
+    ],
     signalZones: [],
     waitingZones: [],
     guidePaths: [],
@@ -296,10 +321,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-3",
     name: "档案 / 护送代价",
     shortName: "区域 4",
-    hint: "以维修身份穿过第一道闸门，再把备用电池送到检修台，把护送机从路线边上引开。",
+    hint: "维修身份能带你进来，但护送机会让出口重新打量你。",
     signage: [
       "维修流程默认附带护送。",
-      "继续前进前，先把备用部件送到检修台。",
+      "检修台会改变当前路线优先级。",
     ],
     dimensions: {
       width: 512,
@@ -437,11 +462,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-4",
     name: "观察 / 身份切换",
     shortName: "区域 5",
-    hint: "以维修身份进入，用广播台卸下本地工单，再把自己切回访客流程。",
+    hint: "这里能把维修痕迹卸下来，再慢慢把你改写回访客。",
     signage: [
-      "维修工单会一直带着护送。",
-      "访客出口只接受被引导的访客。",
-      "复核对象请在示意区缓行等待记录更新。",
+      "广播改派会打断护送节奏。",
+      "复核区会重写低置信记录。",
     ],
     dimensions: {
       width: 640,
@@ -620,11 +644,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-5",
     name: "办公 / 值班交接",
     shortName: "区域 6",
-    hint: "去交接区站定，等夜班文员把你记进值班流程。",
+    hint: "别急着找出口。先看谁能把你写进夜班记录。",
     signage: [
-      "人工确认仅用于纠正低置信结果。",
-      "值班交接对象请在交接区缓行等待。",
-      "未写入交接记录的对象不得离层。",
+      "交接记录未写入前，不得离层。",
+      "低置信对象需在交接区等待。",
     ],
     dimensions: {
       width: 704,
@@ -697,6 +720,19 @@ export const ROOMS: RoomDefinition[] = [
       },
     ],
     items: [],
+    clues: [
+      {
+        id: "handover-ledger",
+        rect: { x: 500, y: 176, width: 20, height: 12 },
+        label: "值班交接簿",
+        title: "夜班交接簿",
+        body: [
+          "夜班文员只记录交接区内完成停留确认的对象。",
+          "未写进交接簿的人，不在值班出口放行范围内。",
+        ],
+        style: "ledger",
+      },
+    ],
     signalZones: [],
     waitingZones: [
       {
@@ -725,11 +761,10 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-6",
     name: "核心 / 签出转运",
     shortName: "区域 7",
-    hint: "先在签出区完成示意，让系统把你写成合法领出对象。",
+    hint: "签出区先认领出的人，再认被带走的人。",
     signage: [
-      "未签出对象不得离层。",
-      "签出对象请在签出区缓行等待。",
-      "人工签出一经确认，不得中途变更对象。",
+      "签出记录未完成，对象不得离层。",
+      "确认后的签出对象不可中途更换。",
     ],
     dimensions: {
       width: 736,

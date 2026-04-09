@@ -15,6 +15,7 @@ import {
 import { getSpeedLimit, NORMAL_SPEED_LIMIT } from "../../game/simulation/rules";
 import { GameSession } from "../../game/simulation/session";
 import type {
+  ClueDefinition,
   ConsoleDefinition,
   DoorDefinition,
   DoorRule,
@@ -48,6 +49,9 @@ const PRELUDE_GATE_ART_WIDTH = 152;
 const PRELUDE_GATE_ART_HEIGHT = 156;
 const PRELUDE_GATE_TEXTURE_SCALE = 4;
 const PRELUDE_SCENE_TEXTURE_KEY = "prelude-scene-art";
+const PRELUDE_SKY_TEXTURE_KEY = "prelude-sky-art";
+const PRELUDE_TOWN_FAR_TEXTURE_KEY = "prelude-town-far-art";
+const PRELUDE_TOWN_NEAR_TEXTURE_KEY = "prelude-town-near-art";
 const PRELUDE_SCENE_TEXTURE_SCALE = 3;
 const PRELUDE_BUS_CLOSED_TEXTURE_KEY = "prelude-bus-closed";
 const PRELUDE_BUS_OPEN_TEXTURE_KEY = "prelude-bus-open";
@@ -72,8 +76,35 @@ const PRELUDE_GATE_ENTRY_ZONE: Rect = {
   width: 16,
   height: PRELUDE_GATE_BLOCKER_RECT.height + 20,
 };
+const PRELUDE_FAR_TOWNSCAPE = [
+  { x: 4, width: 18, height: 18 },
+  { x: 24, width: 32, height: 14 },
+  { x: 62, width: 42, height: 10 },
+  { x: 110, width: 28, height: 16 },
+  { x: 144, width: 36, height: 13 },
+  { x: 188, width: 22, height: 24 },
+  { x: 214, width: 38, height: 14 },
+  { x: 260, width: 24, height: 20 },
+  { x: 290, width: 34, height: 30 },
+  { x: 332, width: 18, height: 16 },
+  { x: 356, width: 28, height: 24 },
+  { x: 390, width: 22, height: 18 },
+  { x: 418, width: 32, height: 22 },
+] as const;
+const PRELUDE_NEAR_TOWNSCAPE = [
+  { x: 18, width: 44, height: 24, sign: false },
+  { x: 68, width: 34, height: 18, sign: true },
+  { x: 108, width: 50, height: 30, sign: false },
+  { x: 164, width: 36, height: 20, sign: false },
+  { x: 206, width: 54, height: 34, sign: true },
+  { x: 266, width: 44, height: 26, sign: false },
+  { x: 318, width: 38, height: 22, sign: false },
+  { x: 362, width: 54, height: 30, sign: true },
+  { x: 422, width: 34, height: 18, sign: false },
+] as const;
 
 type ScenePhase = "prelude" | "facility";
+type PreludeTownLayer = "far" | "near";
 
 type PreludeArrivalState =
   | "waiting"
@@ -157,6 +188,14 @@ interface RenderedSlot {
 interface RenderedConsole {
   def: ConsoleDefinition;
   shape: Phaser.GameObjects.Rectangle;
+  label: Phaser.GameObjects.Text;
+}
+
+interface RenderedClue {
+  def: ClueDefinition;
+  shadow: Phaser.GameObjects.Rectangle;
+  shape: Phaser.GameObjects.Rectangle;
+  accent: Phaser.GameObjects.GameObject;
   label: Phaser.GameObjects.Text;
 }
 
@@ -247,6 +286,7 @@ export class GameScene extends Phaser.Scene {
   private itemObjects = new Map<string, RenderedItem>();
   private slotObjects = new Map<string, RenderedSlot>();
   private consoleObjects = new Map<string, RenderedConsole>();
+  private clueObjects = new Map<string, RenderedClue>();
   private residentObjects = new Map<string, RenderedResident>();
   private staffObjects = new Map<string, RenderedStaff>();
   private signalZoneObjects = new Map<string, RenderedSignalZone>();
@@ -269,6 +309,7 @@ export class GameScene extends Phaser.Scene {
   private carriedItemId: string | null = null;
   private indicateChargeMs = 0;
   private indicateZoneId: string | null = null;
+  private activeClueId: string | null = null;
   private completionShown = false;
 
   constructor() {
@@ -300,6 +341,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_: number, delta: number): void {
+    if (this.phase === "facility" && this.activeClueId) {
+      if (
+        Phaser.Input.Keyboard.JustDown(this.keys.interact) ||
+        Phaser.Input.Keyboard.JustDown(this.keys.pause)
+      ) {
+        this.closeActiveClue();
+        this.syncHud();
+        return;
+      }
+
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      body.setVelocity(0, 0);
+      this.indicateChargeMs = 0;
+      this.indicateZoneId = null;
+      this.renderIndicateRing(0);
+      this.syncConsoles();
+      this.syncClues();
+      this.syncItems();
+      this.syncPlayerShadow(delta);
+      this.syncHud();
+      return;
+    }
+
     if (
       this.phase === "prelude" &&
       Phaser.Input.Keyboard.JustDown(this.keys.skipPrelude)
@@ -416,6 +480,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.syncDroneStates(droneStates);
     this.syncConsoles();
+    this.syncClues();
     this.syncSignalZones(
       activeSignalZone?.id ?? null,
       indicateProgress,
@@ -1709,6 +1774,8 @@ export class GameScene extends Phaser.Scene {
   private loadPrelude(): void {
     this.clearRoomObjects();
     this.clearPreludeObjects();
+    this.activeClueId = null;
+    this.ui.hideModal();
     this.phase = "prelude";
     this.preludeActive = false;
     this.preludeArrivalState = "waiting";
@@ -1721,6 +1788,7 @@ export class GameScene extends Phaser.Scene {
     this.indicateChargeMs = 0;
     this.indicateZoneId = null;
     this.preludePlayerVisualVelocity.set(0, 0);
+    this.ui.setPreludeSkipHintVisible(true);
 
     this.setWorldFrame(PRELUDE_WIDTH, DEFAULT_ROOM_HEIGHT, "prelude");
     this.player.setPosition(PRELUDE_BUS_DOOR_POINT.x, PRELUDE_BUS_DOOR_POINT.y);
@@ -2548,7 +2616,10 @@ export class GameScene extends Phaser.Scene {
   private loadRoom(): void {
     this.clearRoomObjects();
     this.clearPreludeObjects();
+    this.activeClueId = null;
+    this.ui.hideModal();
     this.setPlayerPresentationVisible(true);
+    this.ui.setPreludeSkipHintVisible(false);
     const snapshot = this.session.getSnapshot();
     this.phase = "facility";
     this.currentRoom = snapshot.room;
@@ -2658,6 +2729,10 @@ export class GameScene extends Phaser.Scene {
           label,
         });
       }
+    }
+
+    for (const clueDef of snapshot.room.clues ?? []) {
+      this.createClue(clueDef);
     }
 
     for (const item of snapshot.room.items) {
@@ -2851,6 +2926,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncDoorStates(0);
     this.syncConsoles();
+    this.syncClues();
     this.syncSignalZones(
       null,
       0,
@@ -2876,6 +2952,7 @@ export class GameScene extends Phaser.Scene {
     this.itemObjects.clear();
     this.slotObjects.clear();
     this.consoleObjects.clear();
+    this.clueObjects.clear();
     this.residentObjects.clear();
     this.staffObjects.clear();
     this.signalZoneObjects.clear();
@@ -3219,6 +3296,7 @@ export class GameScene extends Phaser.Scene {
   private skipPreludeToFirstRoom(): void {
     this.preludeActive = false;
     this.ui.hideModal();
+    this.ui.setPreludeSkipHintVisible(false);
     this.enterFacility();
   }
 
@@ -3979,11 +4057,11 @@ export class GameScene extends Phaser.Scene {
     if (this.phase === "prelude") {
       this.ui.renderHud({
         roomName: "门外准备",
-        interpretation: "尚未入场",
+        interpretation: "尚未进入",
         interpretationTone: "neutral",
-        tendency: "读法未定",
+        tendency: "还看不准",
         tendencyTone: "neutral",
-        terminalMode: "无流程标签",
+        terminalMode: "没有挂牌",
         terminalTone: "neutral",
         carrying: "空手",
         hint: this.preludeHint,
@@ -4384,22 +4462,22 @@ export class GameScene extends Phaser.Scene {
 
   private describeInterpretation(value: DoorRule["accepts"][number] | "intruder"): string {
     if (value === "guidedVisitor") {
-      return "读成访客";
+      return "像访客";
     }
     if (value === "maintenanceCandidate") {
-      return "读成维修";
+      return "像维修";
     }
-    return "读成闯入";
+    return "像闯入者";
   }
 
   private describeTerminal(value: TerminalMode): string {
     if (value === "maintenanceRequest") {
-      return "挂了维修工单";
+      return "维修工单";
     }
     if (value === "faultReport") {
-      return "挂了故障上报";
+      return "故障上报";
     }
-    return "无流程标签";
+    return "没有挂牌";
   }
 
   private describeTendency(scores: InterpretationScores): string {
@@ -4412,12 +4490,12 @@ export class GameScene extends Phaser.Scene {
     const lead = primary[1] - secondary[1];
 
     if (lead >= 3) {
-      return `偏${primary[0]}`;
+      return `更像${primary[0]}`;
     }
     if (lead >= 1.2) {
-      return `${primary[0]}占上风`;
+      return `${primary[0]}更重`;
     }
-    return "读法未定";
+    return "还看不准";
   }
 
   private describeDroneState(state: DroneState): string {
