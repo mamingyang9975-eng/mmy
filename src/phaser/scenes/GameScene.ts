@@ -49,9 +49,6 @@ const PRELUDE_GATE_ART_WIDTH = 152;
 const PRELUDE_GATE_ART_HEIGHT = 156;
 const PRELUDE_GATE_TEXTURE_SCALE = 4;
 const PRELUDE_SCENE_TEXTURE_KEY = "prelude-scene-art";
-const PRELUDE_SKY_TEXTURE_KEY = "prelude-sky-art";
-const PRELUDE_TOWN_FAR_TEXTURE_KEY = "prelude-town-far-art";
-const PRELUDE_TOWN_NEAR_TEXTURE_KEY = "prelude-town-near-art";
 const PRELUDE_SCENE_TEXTURE_SCALE = 3;
 const PRELUDE_BUS_CLOSED_TEXTURE_KEY = "prelude-bus-closed";
 const PRELUDE_BUS_OPEN_TEXTURE_KEY = "prelude-bus-open";
@@ -76,35 +73,8 @@ const PRELUDE_GATE_ENTRY_ZONE: Rect = {
   width: 16,
   height: PRELUDE_GATE_BLOCKER_RECT.height + 20,
 };
-const PRELUDE_FAR_TOWNSCAPE = [
-  { x: 4, width: 18, height: 18 },
-  { x: 24, width: 32, height: 14 },
-  { x: 62, width: 42, height: 10 },
-  { x: 110, width: 28, height: 16 },
-  { x: 144, width: 36, height: 13 },
-  { x: 188, width: 22, height: 24 },
-  { x: 214, width: 38, height: 14 },
-  { x: 260, width: 24, height: 20 },
-  { x: 290, width: 34, height: 30 },
-  { x: 332, width: 18, height: 16 },
-  { x: 356, width: 28, height: 24 },
-  { x: 390, width: 22, height: 18 },
-  { x: 418, width: 32, height: 22 },
-] as const;
-const PRELUDE_NEAR_TOWNSCAPE = [
-  { x: 18, width: 44, height: 24, sign: false },
-  { x: 68, width: 34, height: 18, sign: true },
-  { x: 108, width: 50, height: 30, sign: false },
-  { x: 164, width: 36, height: 20, sign: false },
-  { x: 206, width: 54, height: 34, sign: true },
-  { x: 266, width: 44, height: 26, sign: false },
-  { x: 318, width: 38, height: 22, sign: false },
-  { x: 362, width: 54, height: 30, sign: true },
-  { x: 422, width: 34, height: 18, sign: false },
-] as const;
 
 type ScenePhase = "prelude" | "facility";
-type PreludeTownLayer = "far" | "near";
 
 type PreludeArrivalState =
   | "waiting"
@@ -1775,6 +1745,7 @@ export class GameScene extends Phaser.Scene {
     this.clearRoomObjects();
     this.clearPreludeObjects();
     this.activeClueId = null;
+    this.completionShown = false;
     this.ui.hideModal();
     this.phase = "prelude";
     this.preludeActive = false;
@@ -2531,6 +2502,115 @@ export class GameScene extends Phaser.Scene {
     this.waitingZoneObjects.set(zone.id, { zone, shape, label });
   }
 
+  private getCluePalette(style: ClueDefinition["style"]): {
+    fill: number;
+    stroke: number;
+    label: string;
+    accent: number;
+  } {
+    switch (style) {
+      case "sticker":
+        return {
+          fill: 0x4b3929,
+          stroke: 0xf2c071,
+          label: "#f0d7aa",
+          accent: 0xffde9a,
+        };
+      case "ledger":
+        return {
+          fill: 0x3d3025,
+          stroke: 0xe5d0a8,
+          label: "#e6dcc3",
+          accent: 0xb99a69,
+        };
+      case "clipboard":
+      default:
+        return {
+          fill: 0x4e5b70,
+          stroke: 0xcfe1f5,
+          label: "#d8e8f9",
+          accent: 0x89b4dd,
+        };
+    }
+  }
+
+  private createClue(def: ClueDefinition): void {
+    const palette = this.getCluePalette(def.style);
+    const shadow = this.addShadowRect(def.rect, 6.7, 4, 4, 3, 0.24);
+    const shape = this.add.rectangle(
+      def.rect.x + def.rect.width / 2,
+      def.rect.y + def.rect.height / 2,
+      def.rect.width,
+      def.rect.height,
+      palette.fill,
+      0.92,
+    );
+    shape.setStrokeStyle(1.5, palette.stroke, 0.88);
+    shape.setDepth(7);
+
+    let accent: Phaser.GameObjects.GameObject;
+    if (def.style === "ledger") {
+      const lines = this.add.graphics();
+      lines.setDepth(7.08);
+      lines.lineStyle(1, palette.accent, 0.48);
+      for (let y = def.rect.y + 3; y < def.rect.y + def.rect.height - 2; y += 3) {
+        lines.lineBetween(def.rect.x + 3, y, def.rect.x + def.rect.width - 3, y);
+      }
+      lines.lineStyle(1, palette.accent, 0.68);
+      lines.lineBetween(
+        def.rect.x + 5,
+        def.rect.y + 2,
+        def.rect.x + 5,
+        def.rect.y + def.rect.height - 2,
+      );
+      accent = lines;
+    } else if (def.style === "sticker") {
+      const seal = this.add.circle(
+        def.rect.x + def.rect.width - 4,
+        def.rect.y + 4,
+        2.5,
+        palette.accent,
+        0.92,
+      );
+      seal.setDepth(7.08);
+      accent = seal;
+    } else {
+      const clip = this.add.rectangle(
+        def.rect.x + def.rect.width / 2,
+        def.rect.y + 1.5,
+        Math.max(6, def.rect.width - 8),
+        3,
+        palette.accent,
+        0.92,
+      );
+      clip.setDepth(7.08);
+      accent = clip;
+    }
+
+    const label = this.add.text(
+      def.rect.x - 4,
+      def.rect.y + def.rect.height + 4,
+      def.label,
+      {
+        fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
+        fontSize: "8px",
+        color: palette.label,
+        resolution: CAMERA_ZOOM,
+      },
+    );
+    label.setDepth(8);
+    this.decorateLabel(label);
+
+    this.roomObjects.push(shape, accent, label);
+    this.clueObjects.set(def.id, {
+      def,
+      shadow,
+      shape,
+      accent,
+      label,
+    });
+  }
+
   private createSignalZone(id: string, rect: Rect): void {
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -2617,6 +2697,7 @@ export class GameScene extends Phaser.Scene {
     this.clearRoomObjects();
     this.clearPreludeObjects();
     this.activeClueId = null;
+    this.completionShown = false;
     this.ui.hideModal();
     this.setPlayerPresentationVisible(true);
     this.ui.setPreludeSkipHintVisible(false);
@@ -2976,6 +3057,11 @@ export class GameScene extends Phaser.Scene {
       object.destroy();
     }
     this.preludeObjects = [];
+  }
+
+  private closeActiveClue(): void {
+    this.activeClueId = null;
+    this.ui.hideModal();
   }
 
   private getInputVelocity(): Phaser.Math.Vector2 {
@@ -3364,6 +3450,28 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const nearestClue = Array.from(this.clueObjects.values())
+      .map((clue) => ({
+        clue,
+        distance: distanceToRect(playerPos, clue.def.rect),
+      }))
+      .filter((entry) => entry.distance <= INTERACT_RANGE)
+      .sort((a, b) => a.distance - b.distance)[0];
+
+    if (nearestClue) {
+      this.activeClueId = nearestClue.clue.def.id;
+      this.ui.showClue(
+        nearestClue.clue.def.title,
+        nearestClue.clue.def.body,
+        () => {
+          this.closeActiveClue();
+          this.syncHud();
+        },
+      );
+      this.playKeyboardClick("light");
+      return;
+    }
+
     const nearestItem = Array.from(this.itemObjects.values())
       .filter((item) => !this.carriedItemId || item.id !== this.carriedItemId)
       .map((item) => ({
@@ -3411,6 +3519,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private processExits(): boolean {
+    if (this.session.getSnapshot().isComplete) {
+      return false;
+    }
+
     const room = this.currentRoom;
     const playerPos = { x: this.player.x, y: this.player.y };
 
@@ -3425,10 +3537,11 @@ export class GameScene extends Phaser.Scene {
       const moved = this.session.goToNextRoom();
       if (moved) {
         this.loadRoom();
-      } else {
-        this.syncHud();
+        return true;
       }
-      return true;
+
+      this.syncHud();
+      return !this.session.getSnapshot().isComplete;
     }
 
     return false;
@@ -3496,6 +3609,8 @@ export class GameScene extends Phaser.Scene {
           ? runtime.visitorFlowUnlocked
           : consoleObject.def.action === "primeGuidance"
             ? runtime.guideFieldPrimed
+            : consoleObject.def.action === "releaseSubject"
+              ? runtime.subjectReleased
             : runtime.escortReroutedMs > 0;
       consoleObject.shape.setFillStyle(
         active ? 0x6a4b2d : 0x423224,
@@ -3507,6 +3622,35 @@ export class GameScene extends Phaser.Scene {
         0.95,
       );
       consoleObject.label.setColor(active ? "#fff1c9" : "#f4c783");
+    }
+  }
+
+  private syncClues(): void {
+    const playerPos = { x: this.player.x, y: this.player.y };
+    for (const clue of this.clueObjects.values()) {
+      const palette = this.getCluePalette(clue.def.style);
+      const isActive = clue.def.id === this.activeClueId;
+      const isNear = distanceToRect(playerPos, clue.def.rect) <= INTERACT_RANGE;
+      const fill = isActive
+        ? this.mixColorHex(palette.fill, 0xffffff, 0.22)
+        : isNear
+          ? this.mixColorHex(palette.fill, 0xffffff, 0.12)
+          : palette.fill;
+      const stroke = isActive
+        ? this.mixColorHex(palette.stroke, 0xffffff, 0.18)
+        : palette.stroke;
+
+      clue.shadow.setAlpha(isActive ? 0.34 : isNear ? 0.28 : 0.22);
+      clue.shape.setFillStyle(fill, isActive ? 0.98 : isNear ? 0.96 : 0.9);
+      clue.shape.setStrokeStyle(1.5, stroke, isActive ? 1 : isNear ? 0.95 : 0.82);
+      clue.label.setColor(isActive ? "#fff7e0" : isNear ? "#ffffff" : palette.label);
+      clue.label.setText(
+        isActive
+          ? `${clue.def.label}\n再次按 E 收起`
+          : isNear
+            ? `${clue.def.label}\n按 E 查看`
+            : clue.def.label,
+      );
     }
   }
 
@@ -4639,5 +4783,3 @@ export class GameScene extends Phaser.Scene {
     return context;
   }
 }
-
-

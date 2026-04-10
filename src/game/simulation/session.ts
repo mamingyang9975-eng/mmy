@@ -108,6 +108,44 @@ function createArchiveEntry(subjectName: string): ArchiveEntry {
   };
 }
 
+function createSubjectReleaseCompletionSummary(
+  subjectName: string,
+): CompletionSummary {
+  return {
+    title: "门外 / 已领出",
+    paragraphs: [
+      `你把${subjectName}从签出转运里带了出来。出口先认的是你的领出身份，等它终于也认下${subjectName}时，门外的风已经比里面真实得多。`,
+      `设施还在身后继续运转，但这一次，它没能把${subjectName}重新写回那套内部流程。外面终于留下了他作为一个人的痕迹，而不只是一个待转运对象。`,
+    ],
+    phone: {
+      sender: "接应人",
+      messages: [
+        `${subjectName}出来了就好。外门这边已经接上你们了。`,
+        "签出记录还在往回刷，但这次它追不上人了。",
+        `先带${subjectName}离开这条路。外面的名字、声音和体温会比里面那套判定更快把人留住。`,
+      ],
+      footer: "离开出口范围后再停下。只要继续往外走，这次带离就不会再被改写。",
+    },
+    records: [
+      {
+        label: "带离结果",
+        value: `${subjectName}已完成签出带离`,
+        detail: "出口先认了你们是一组，内部转运记录这次没能把人重新扣回去。",
+      },
+      {
+        label: "门外接应",
+        value: "接应路线已接通",
+        detail: "外侧联络、步行路线和临时落脚点都已经准备好，离开不再只是一条系统许可。",
+      },
+      {
+        label: `${subjectName}的外部痕迹`,
+        value: "第一句落在门外的话是：先喝水，吃点热的。",
+        detail: "那不是内部记录的术语，而是外面重新接住他的方式。",
+      },
+    ],
+  };
+}
+
 export class GameSession {
   private roomIndex = 0;
   private runtime = createRuntime(ROOMS[0]);
@@ -427,13 +465,15 @@ export class GameSession {
 
   goToNextRoom(): boolean {
     if (this.roomIndex >= ROOMS.length - 1) {
+      const resident = this.getRoom().residents[0];
+      const subjectName = resident?.label ?? "阿述";
       if (!this.archiveEntry) {
-        const resident = this.getRoom().residents[0];
-        this.archiveEntry = createArchiveEntry(resident?.label ?? "阿述");
+        this.archiveEntry = createArchiveEntry(subjectName);
       }
+      this.complete = true;
+      this.completion = createSubjectReleaseCompletionSummary(subjectName);
       this.paused = true;
-      this.runtime.message =
-        "签出出口先认了这次离开，下一轮内部判定却还没有结束。";
+      this.runtime.message = `${subjectName}已经被带离出口范围。`;
       return false;
     }
 
@@ -448,6 +488,7 @@ export class GameSession {
   private enterRoom(roomIndex: number): void {
     this.roomIndex = roomIndex;
     this.runtime = createRuntime(ROOMS[this.roomIndex]);
+    this.complete = false;
     this.archiveEntry = null;
     this.completion = null;
     this.runtime.message = this.getDefaultMessage();
