@@ -53,7 +53,6 @@ const INTERACT_RANGE = 20;
 const EXIT_GRACE_MS = 220;
 const INDICATE_HOLD_MS = 2500;
 const GUIDE_PATH_EXTRA_TOLERANCE = 12;
-const GUIDE_PATH_HIGHLIGHT_TOLERANCE = 28;
 const MIN_SCANNER_TURN_RADIANS = Math.PI / 3;
 const SCANNER_TURN_PICK_ATTEMPTS = 16;
 const PRELUDE_SLOW_SPEED = 68;
@@ -231,7 +230,6 @@ interface ScannerPatrolRuntime {
 }
 
 interface RouteReading {
-  activePathId: string | null;
   routeIntent: "guided" | "maintenance" | null;
   isOnTrustedRoute: boolean;
 }
@@ -311,7 +309,6 @@ export class GameScene extends Phaser.Scene {
   private backdrop!: Phaser.GameObjects.Graphics;
   private backdropDetail!: Phaser.GameObjects.Graphics;
   private indicateRing!: Phaser.GameObjects.Arc;
-  private guideGraphics!: Phaser.GameObjects.Graphics;
   private roomTitle!: Phaser.GameObjects.Text;
   private roomObjects: Phaser.GameObjects.GameObject[] = [];
   private preludeObjects: Phaser.GameObjects.GameObject[] = [];
@@ -511,7 +508,6 @@ export class GameScene extends Phaser.Scene {
       signalEnabled,
       runtime.guideMemory.remainingMs > 0,
     );
-    this.syncGuidePaths(routeReading.activePathId);
     this.syncResidents();
     this.syncStaff();
     this.syncWaitingZones(
@@ -1668,123 +1664,9 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const alphaScale = mode === "tile" ? 0.88 : 1;
 
-    this.drawFacilityGuideRoutes(ctx, room, palette, alphaScale);
-
     for (const fixture of room.fixtures ?? []) {
       this.drawFacilityFixtureBackdrop(ctx, fixture, palette, alphaScale);
     }
-  }
-
-  private drawFacilityGuideRoutes(
-    ctx: CanvasRenderingContext2D,
-    room: RoomDefinition,
-    palette: FacilityScenePalette,
-    alphaScale: number,
-  ): void {
-    if (room.guidePaths.length === 0) {
-      return;
-    }
-
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    for (const path of room.guidePaths) {
-      if (path.points.length < 2) {
-        continue;
-      }
-
-      const accent = path.color === "amber" ? palette.warm : palette.accent;
-      const haloAlpha = path.color === "amber" ? 0.11 : 0.1;
-
-      ctx.strokeStyle = this.colorToRgba(0x071019, 0.34 * alphaScale);
-      ctx.lineWidth = 8;
-      ctx.beginPath();
-      ctx.moveTo(path.points[0].x, path.points[0].y);
-      for (let index = 1; index < path.points.length; index += 1) {
-        ctx.lineTo(path.points[index].x, path.points[index].y);
-      }
-      ctx.stroke();
-
-      ctx.strokeStyle = this.colorToRgba(accent, haloAlpha * alphaScale);
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(path.points[0].x, path.points[0].y);
-      for (let index = 1; index < path.points.length; index += 1) {
-        ctx.lineTo(path.points[index].x, path.points[index].y);
-      }
-      ctx.stroke();
-
-      ctx.strokeStyle = this.colorToRgba(accent, 0.24 * alphaScale);
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(path.points[0].x, path.points[0].y);
-      for (let index = 1; index < path.points.length; index += 1) {
-        ctx.lineTo(path.points[index].x, path.points[index].y);
-      }
-      ctx.stroke();
-
-      for (let index = 1; index < path.points.length; index += 1) {
-        const from = path.points[index - 1];
-        const to = path.points[index];
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const length = Math.hypot(dx, dy);
-        if (length <= 0.001) {
-          continue;
-        }
-
-        const nx = dx / length;
-        const ny = dy / length;
-        for (let dist = 10; dist < length - 6; dist += 18) {
-          const x = from.x + nx * dist;
-          const y = from.y + ny * dist;
-
-          ctx.fillStyle = this.colorToRgba(accent, 0.2 * alphaScale);
-          ctx.beginPath();
-          ctx.arc(x, y, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      this.drawFacilityGuideEndpoint(
-        ctx,
-        path.points[0],
-        accent,
-        0.8 * alphaScale,
-      );
-      this.drawFacilityGuideEndpoint(
-        ctx,
-        path.points[path.points.length - 1],
-        accent,
-        alphaScale,
-      );
-    }
-
-    ctx.restore();
-  }
-
-  private drawFacilityGuideEndpoint(
-    ctx: CanvasRenderingContext2D,
-    point: { x: number; y: number },
-    accent: number,
-    alphaScale: number,
-  ): void {
-    ctx.fillStyle = this.colorToRgba(0x071019, 0.52 * alphaScale);
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = this.colorToRgba(accent, 0.34 * alphaScale);
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = this.colorToRgba(accent, 0.3 * alphaScale);
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 2.1, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   private drawFacilityFixtureBackdrop(
@@ -2597,8 +2479,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createForeground(): void {
-    this.guideGraphics = this.add.graphics();
-    this.guideGraphics.setDepth(2);
     this.roomTitle = this.add.text(12, 12, "", {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "14px",
@@ -4881,7 +4761,6 @@ export class GameScene extends Phaser.Scene {
       !snapshot.room.signalRequiresActivation || snapshot.runtime.guideFieldPrimed,
       snapshot.runtime.guideMemory.remainingMs > 0,
     );
-    this.syncGuidePaths(null);
     this.syncResidents();
     this.syncStaff();
     this.syncWaitingZones(
@@ -4914,7 +4793,6 @@ export class GameScene extends Phaser.Scene {
       object.destroy();
     }
     this.roomObjects = [];
-    this.guideGraphics.clear();
   }
 
   private clearPreludeObjects(): void {
@@ -5682,75 +5560,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncGuidePaths(activePathId: string | null): void {
-    this.guideGraphics.clear();
-    if (!activePathId) {
-      return;
-    }
-
-    const activePath = this.currentRoom.guidePaths.find(
-      (path) => path.id === activePathId,
-    );
-    if (!activePath || activePath.points.length < 2) {
-      return;
-    }
-
-    const pulse = (Math.sin(this.time.now / 220) + 1) * 0.5;
-    const color = activePath.color === "amber" ? 0xf0c96f : 0x7fe4ff;
-
-    this.guideGraphics.lineStyle(6, 0x061019, 0.1 + pulse * 0.03);
-    this.guideGraphics.beginPath();
-    this.guideGraphics.moveTo(activePath.points[0].x, activePath.points[0].y);
-    for (let index = 1; index < activePath.points.length; index += 1) {
-      const point = activePath.points[index];
-      this.guideGraphics.lineTo(point.x, point.y);
-    }
-    this.guideGraphics.strokePath();
-
-    this.guideGraphics.lineStyle(2.25, color, 0.26 + pulse * 0.16);
-    this.guideGraphics.beginPath();
-    this.guideGraphics.moveTo(activePath.points[0].x, activePath.points[0].y);
-    for (let index = 1; index < activePath.points.length; index += 1) {
-      const point = activePath.points[index];
-      this.guideGraphics.lineTo(point.x, point.y);
-    }
-    this.guideGraphics.strokePath();
-
-    for (let index = 0; index < activePath.points.length; index += 1) {
-      const point = activePath.points[index];
-      this.guideGraphics.fillStyle(0x061019, 0.24);
-      this.guideGraphics.fillCircle(point.x, point.y, 5);
-      this.guideGraphics.fillStyle(color, 0.18 + pulse * 0.08);
-      this.guideGraphics.fillCircle(point.x, point.y, 3);
-      this.guideGraphics.fillStyle(0xffffff, 0.18 + pulse * 0.08);
-      this.guideGraphics.fillCircle(point.x, point.y, 1);
-    }
-
-    for (let index = 1; index < activePath.points.length; index += 1) {
-      const from = activePath.points[index - 1];
-      const to = activePath.points[index];
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.hypot(dx, dy);
-      if (length <= 0.001) {
-        continue;
-      }
-
-      const nx = dx / length;
-      const ny = dy / length;
-      const spacing = 18;
-      const travelOffset = (this.time.now / 26) % spacing;
-
-      for (let dist = 10; dist < length - 6; dist += spacing) {
-        const shifted = Math.min(length - 4, dist + travelOffset);
-        const x = from.x + nx * shifted;
-        const y = from.y + ny * shifted;
-        this.guideGraphics.fillStyle(color, 0.08 + pulse * 0.05);
-        this.guideGraphics.fillCircle(x, y, 2.6);
-      }
-    }
-  }
-
   private syncItems(): void {
     for (const item of this.itemObjects.values()) {
       if (this.carriedItemId === item.id) {
@@ -6258,7 +6067,6 @@ export class GameScene extends Phaser.Scene {
   ): RouteReading {
     if (room.guidePaths.length === 0) {
       return {
-        activePathId: null,
         routeIntent: null,
         isOnTrustedRoute: true,
       };
@@ -6266,7 +6074,6 @@ export class GameScene extends Phaser.Scene {
 
     let nearest:
       | {
-          pathId: string;
           distance: number;
           tolerance: number;
           routeIntent: "guided" | "maintenance";
@@ -6281,7 +6088,6 @@ export class GameScene extends Phaser.Scene {
 
       if (!nearest || distanceToPath < nearest.distance) {
         nearest = {
-          pathId: path.id,
           distance: distanceToPath,
           tolerance: path.tolerance + GUIDE_PATH_EXTRA_TOLERANCE,
           routeIntent: path.activeWhen,
@@ -6291,17 +6097,14 @@ export class GameScene extends Phaser.Scene {
 
     if (!nearest) {
       return {
-        activePathId: null,
         routeIntent: null,
         isOnTrustedRoute: true,
       };
     }
 
-    const highlightRadius = nearest.tolerance + GUIDE_PATH_HIGHLIGHT_TOLERANCE;
     const isOnTrustedRoute = nearest.distance <= nearest.tolerance;
 
     return {
-      activePathId: nearest.distance <= highlightRadius ? nearest.pathId : null,
       routeIntent: isOnTrustedRoute ? nearest.routeIntent : null,
       isOnTrustedRoute,
     };

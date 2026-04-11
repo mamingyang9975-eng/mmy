@@ -6,8 +6,8 @@ import { UiController } from "./ui/UiController";
 import { setUiController } from "./ui/controllerStore";
 
 const app = document.querySelector<HTMLDivElement>("#app");
-const DISPLAY_WIDTH = 1152;
-const DISPLAY_HEIGHT = 648;
+const DISPLAY_WIDTH = 960;
+const DISPLAY_HEIGHT = 540;
 
 if (!app) {
   throw new Error("未找到应用容器。");

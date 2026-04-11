@@ -68,9 +68,21 @@ export const ROOMS: RoomDefinition[] = [
         tone: "entry",
       },
       {
+        id: "entry-kiosk-side",
+        kind: "deskPod",
+        rect: { x: 144, y: 42, width: 30, height: 16 },
+        tone: "entry",
+      },
+      {
         id: "entry-counter-a",
         kind: "counter",
         rect: { x: 72, y: 122, width: 68, height: 14 },
+        tone: "entry",
+      },
+      {
+        id: "entry-planter-a",
+        kind: "planter",
+        rect: { x: 28, y: 182, width: 22, height: 10 },
         tone: "entry",
       },
     ],
@@ -188,9 +200,21 @@ export const ROOMS: RoomDefinition[] = [
         tone: "entry",
       },
       {
+        id: "reception-checkin-desk",
+        kind: "deskPod",
+        rect: { x: 154, y: 42, width: 28, height: 16 },
+        tone: "entry",
+      },
+      {
         id: "reception-planter",
         kind: "planter",
         rect: { x: 192, y: 176, width: 26, height: 10 },
+        tone: "entry",
+      },
+      {
+        id: "reception-bench-a",
+        kind: "benchRow",
+        rect: { x: 38, y: 184, width: 98, height: 12 },
         tone: "entry",
       },
     ],
@@ -389,9 +413,21 @@ export const ROOMS: RoomDefinition[] = [
         tone: "service",
       },
       {
+        id: "service-rack-b",
+        kind: "storageRack",
+        rect: { x: 172, y: 58, width: 52, height: 12 },
+        tone: "service",
+      },
+      {
         id: "service-counter-a",
         kind: "counter",
         rect: { x: 182, y: 180, width: 46, height: 14 },
+        tone: "service",
+      },
+      {
+        id: "service-planter-a",
+        kind: "planter",
+        rect: { x: 198, y: 182, width: 20, height: 10 },
         tone: "service",
       },
     ],
@@ -518,15 +554,33 @@ export const ROOMS: RoomDefinition[] = [
     ],
     fixtures: [
       {
+        id: "maintenance-rack-left",
+        kind: "storageRack",
+        rect: { x: 42, y: 24, width: 68, height: 14 },
+        tone: "service",
+      },
+      {
         id: "maintenance-rack-c",
         kind: "storageRack",
         rect: { x: 314, y: 34, width: 74, height: 16 },
         tone: "service",
       },
       {
+        id: "maintenance-bench-left",
+        kind: "workbench",
+        rect: { x: 46, y: 176, width: 62, height: 12 },
+        tone: "service",
+      },
+      {
         id: "maintenance-bench-c",
         kind: "workbench",
         rect: { x: 314, y: 176, width: 72, height: 14 },
+        tone: "service",
+      },
+      {
+        id: "maintenance-divider-c",
+        kind: "divider",
+        rect: { x: 334, y: 140, width: 38, height: 10 },
         tone: "service",
       },
     ],
@@ -697,6 +751,12 @@ export const ROOMS: RoomDefinition[] = [
     ],
     fixtures: [
       {
+        id: "archive-shelf-left",
+        kind: "fileShelf",
+        rect: { x: 222, y: 34, width: 46, height: 14 },
+        tone: "archive",
+      },
+      {
         id: "archive-shelf-top",
         kind: "fileShelf",
         rect: { x: 448, y: 34, width: 72, height: 16 },
@@ -718,6 +778,12 @@ export const ROOMS: RoomDefinition[] = [
         id: "archive-divider",
         kind: "divider",
         rect: { x: 456, y: 136, width: 58, height: 10 },
+        tone: "archive",
+      },
+      {
+        id: "archive-planter-a",
+        kind: "planter",
+        rect: { x: 228, y: 180, width: 22, height: 10 },
         tone: "archive",
       },
     ],
@@ -872,6 +938,12 @@ export const ROOMS: RoomDefinition[] = [
     ],
     fixtures: [
       {
+        id: "handover-bench-a",
+        kind: "benchRow",
+        rect: { x: 48, y: 178, width: 92, height: 12 },
+        tone: "office",
+      },
+      {
         id: "handover-cabinet-top",
         kind: "fileShelf",
         rect: { x: 214, y: 26, width: 64, height: 18 },
@@ -893,6 +965,18 @@ export const ROOMS: RoomDefinition[] = [
         id: "handover-divider",
         kind: "divider",
         rect: { x: 514, y: 134, width: 72, height: 10 },
+        tone: "office",
+      },
+      {
+        id: "handover-desk-side",
+        kind: "deskPod",
+        rect: { x: 390, y: 174, width: 42, height: 14 },
+        tone: "office",
+      },
+      {
+        id: "handover-planter-a",
+        kind: "planter",
+        rect: { x: 594, y: 34, width: 20, height: 10 },
         tone: "office",
       },
     ],
@@ -995,6 +1079,24 @@ export const ROOMS: RoomDefinition[] = [
         id: "signout-record-shelf",
         kind: "fileShelf",
         rect: { x: 420, y: 36, width: 52, height: 16 },
+        tone: "office",
+      },
+      {
+        id: "signout-bench-late",
+        kind: "benchRow",
+        rect: { x: 42, y: 180, width: 82, height: 12 },
+        tone: "office",
+      },
+      {
+        id: "signout-desk-b",
+        kind: "deskPod",
+        rect: { x: 560, y: 176, width: 44, height: 14 },
+        tone: "office",
+      },
+      {
+        id: "signout-planter-a",
+        kind: "planter",
+        rect: { x: 558, y: 36, width: 20, height: 10 },
         tone: "office",
       },
     ],

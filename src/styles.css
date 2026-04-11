@@ -1,7 +1,17 @@
 :root {
-  --game-native-width: 1152px;
-  --hud-width: 320px;
-  --frame-gap: 18px;
+  --game-native-width: 960px;
+  --hud-width: 300px;
+  --frame-gap: 16px;
+  --panel-border: rgba(124, 162, 211, 0.18);
+  --panel-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --panel-fill:
+    linear-gradient(180deg, rgba(20, 26, 37, 0.95), rgba(12, 16, 24, 0.98)),
+    radial-gradient(circle at top, rgba(107, 226, 255, 0.08), transparent 34%);
+  --panel-fill-soft:
+    linear-gradient(180deg, rgba(25, 32, 44, 0.82), rgba(16, 22, 33, 0.88)),
+    radial-gradient(circle at top right, rgba(107, 226, 255, 0.08), transparent 42%);
   color-scheme: dark;
   font-family: "Avenir Next", "PingFang SC", "Noto Sans SC", sans-serif;
   background:
@@ -42,7 +52,7 @@ select {
 .game-frame {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, var(--game-native-width)) var(--hud-width);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, var(--hud-width));
   gap: var(--frame-gap);
   width: min(
     calc(var(--game-native-width) + var(--hud-width) + var(--frame-gap)),
@@ -55,7 +65,8 @@ select {
 .game-root {
   position: relative;
   isolation: isolate;
-  width: min(100%, var(--game-native-width));
+  width: 100%;
+  max-width: var(--game-native-width);
   min-height: 0;
   aspect-ratio: 16 / 9;
   align-self: start;
@@ -470,23 +481,31 @@ select {
 }
 
 .hud-panel {
+  position: relative;
+  width: 100%;
   min-height: 0;
   display: grid;
   grid-template-rows: min-content minmax(0, 1fr);
   gap: 14px;
   padding: 16px;
   max-height: min(680px, calc(100vh - 36px));
-  border: 1px solid rgba(124, 162, 211, 0.18);
+  border: 1px solid var(--panel-border);
   border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(20, 26, 37, 0.95), rgba(12, 16, 24, 0.98)),
-    radial-gradient(circle at top, rgba(239, 207, 105, 0.07), transparent 30%);
+  background: var(--panel-fill);
   backdrop-filter: blur(10px);
   overflow: hidden;
+  box-shadow: var(--panel-shadow);
 }
 
 .hud-header {
-  padding: 8px 10px 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    radial-gradient(circle at top right, rgba(107, 226, 255, 0.08), transparent 46%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .hud-eyebrow {
@@ -497,15 +516,16 @@ select {
 }
 
 .hud-title {
-  margin: 6px 0 0;
-  font-size: 26px;
-  line-height: 1;
+  margin: 0;
+  font-size: clamp(24px, 2vw, 28px);
+  line-height: 1.05;
   color: #edf3fb;
 }
 
 .hud-scroll {
   min-height: 0;
   display: grid;
+  grid-template-columns: 1fr;
   grid-auto-rows: min-content;
   gap: 12px;
   padding: 4px;
@@ -532,8 +552,9 @@ select {
 .hint-wrap {
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-fill-soft);
   border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .metric-label {
@@ -545,7 +566,7 @@ select {
 
 .metric-value {
   margin-top: 6px;
-  font-size: 18px;
+  font-size: clamp(17px, 1.4vw, 19px);
   font-weight: 600;
   color: #edf3fb;
   overflow-wrap: anywhere;
@@ -835,10 +856,23 @@ select {
   justify-content: flex-end;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1180px) {
   .game-frame {
-    grid-template-columns: minmax(0, 1fr) 280px;
-    width: min(100%, calc(100vw - 36px));
+    grid-template-columns: 1fr;
+    width: min(100%, var(--game-native-width));
+  }
+
+  .hud-panel {
+    max-height: none;
+  }
+
+  .hud-scroll {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .hint-wrap {
+    grid-column: 1 / -1;
   }
 }
 
@@ -897,7 +931,11 @@ select {
   }
 
   .hud-panel {
-    max-height: 360px;
+    padding: 14px;
+  }
+
+  .hud-scroll {
+    grid-template-columns: 1fr;
   }
 
   .modal.phone-modal {

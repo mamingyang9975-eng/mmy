@@ -22,6 +22,18 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     this.load.image("facility-tileset", "/tilesets/tileset_for_free.png");
     this.load.json("facility-example-map-data", "/maps/free_scifi_tileset_example.json");
+    this.load.image(
+      "steelsoldier-floor-objects",
+      "/tilesets/steelsoldier/floor-objects.png",
+    );
+    this.load.image(
+      "steelsoldier-walls-roofs",
+      "/tilesets/steelsoldier/walls-roofs.png",
+    );
+    this.load.image(
+      "steelsoldier-space-objects",
+      "/tilesets/steelsoldier/space-animated-objects.png",
+    );
   }
 
   create(): void {

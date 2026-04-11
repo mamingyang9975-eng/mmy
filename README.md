@@ -1,5 +1,11 @@
 **原型设计文档**
 
+**第三方素材署名**
+
+- 环境装饰素材接入了 SteelSoldier 的 [Top Down Sci-fi Tileset](https://steelsoldier.itch.io/top-down-sci-fi-tileset)
+- 下载文件存放在 `public/tilesets/steelsoldier/`
+- 作者页面说明允许商用/非商用使用，但需要署名；因此本项目保留这条素材来源说明
+
 **项目定位**
 
 一个俯视角单机潜行解谜原型。  
