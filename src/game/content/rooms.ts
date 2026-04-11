@@ -7,10 +7,11 @@ export const ROOMS: RoomDefinition[] = [
     id: "room-1",
     name: "接入 / 访客登记",
     shortName: "区域 1",
-    hint: "门禁先看登记记录。先观察登记面板和访客门各自认什么。",
+    hint: "先补录访客，再在引导区停一拍。蓝线会决定门禁把你读成谁。",
     signage: [
       "访客记录缺失，门禁保持关闭。",
       "接入对象状态：待登记。",
+      "登记后请在引导区短暂停留，再沿灯带接近门禁。",
     ],
     playerSpawn: { x: 48, y: 170 },
     wallRects: [
@@ -43,6 +44,9 @@ export const ROOMS: RoomDefinition[] = [
         rule: {
           id: "north-door",
           accepts: ["guidedVisitor"],
+          minScores: {
+            guidedVisitor: 6,
+          },
         },
         exitToNextRoom: true,
       },
@@ -52,13 +56,32 @@ export const ROOMS: RoomDefinition[] = [
         id: "registration-console-a",
         rect: { x: 108, y: 146, width: 18, height: 18 },
         label: "登记面板",
-        prompt: "按 E 登记访客",
+        prompt: "按 E 补录访客",
         action: "registerVisitor",
       },
     ],
     items: [],
-    signalZones: [],
-    guidePaths: [],
+    signalZones: [
+      {
+        id: "checkin-signal",
+        rect: { x: 82, y: 138, width: 54, height: 32 },
+      },
+    ],
+    guidePaths: [
+      {
+        id: "visitor-route-a",
+        color: "blue",
+        activeWhen: "guided",
+        tolerance: 14,
+        points: [
+          { x: 108, y: 154 },
+          { x: 134, y: 150 },
+          { x: 162, y: 142 },
+          { x: 184, y: 126 },
+          { x: 204, y: 104 },
+        ],
+      },
+    ],
   },
   {
     id: "room-1b",
@@ -326,6 +349,7 @@ export const ROOMS: RoomDefinition[] = [
       "维修流程默认附带护送。",
       "检修台会改变当前路线优先级。",
     ],
+    signageOrigin: { x: 122, y: 28 },
     dimensions: {
       width: 512,
       height: 216,

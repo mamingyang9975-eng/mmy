@@ -195,6 +195,7 @@ export interface RoomDefinition {
   shortName: string;
   hint: string;
   signage: string[];
+  signageOrigin?: Vec2;
   dimensions?: RoomDimensions;
   wallRects: Rect[];
   playerSpawn: Vec2;
@@ -221,6 +222,7 @@ export interface PlayerIntentSnapshot {
   isInSignalZone: boolean;
   isInGuideRange: boolean;
   isOnTrustedRoute: boolean;
+  routeIntent?: GuidePath["activeWhen"] | null;
   signalEnabled: boolean;
   carryingItemType: ItemSpawn["itemType"] | null;
   terminalMode: TerminalMode;

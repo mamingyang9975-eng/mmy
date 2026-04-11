@@ -2,6 +2,7 @@
 import { ROOMS } from "../../game/content/rooms";
 import {
   distance,
+  distanceToPolyline,
   distanceToRect,
   rectCenter,
   rectContains,
@@ -32,6 +33,12 @@ import type {
   WaitingZone,
 } from "../../game/simulation/types";
 import { getUiController } from "../../ui/controllerStore";
+import {
+  areTouchControlsEnabled,
+  consumeTouchPressAction,
+  getTouchMoveVector,
+  isTouchHoldActionActive,
+} from "../../ui/touchControls";
 
 const DEFAULT_ROOM_WIDTH = 384;
 const PRELUDE_WIDTH = 640;
@@ -39,7 +46,9 @@ const DEFAULT_ROOM_HEIGHT = 216;
 const CAMERA_ZOOM = 3;
 const INTERACT_RANGE = 20;
 const EXIT_GRACE_MS = 220;
-const INDICATE_HOLD_MS = 2000;
+const INDICATE_HOLD_MS = 2500;
+const GUIDE_PATH_EXTRA_TOLERANCE = 12;
+const GUIDE_PATH_HIGHLIGHT_TOLERANCE = 28;
 const MIN_SCANNER_TURN_RADIANS = Math.PI / 3;
 const SCANNER_TURN_PICK_ATTEMPTS = 16;
 const PRELUDE_SLOW_SPEED = 68;
@@ -94,7 +103,6 @@ type KeyMap = {
   rightAlt: Phaser.Input.Keyboard.Key;
   shift: Phaser.Input.Keyboard.Key;
   interact: Phaser.Input.Keyboard.Key;
-  indicate: Phaser.Input.Keyboard.Key;
   skipPrelude: Phaser.Input.Keyboard.Key;
   reset: Phaser.Input.Keyboard.Key;
   pause: Phaser.Input.Keyboard.Key;
@@ -205,6 +213,12 @@ interface ScannerPatrolRuntime {
   target: { x: number; y: number };
 }
 
+interface RouteReading {
+  activePathId: string | null;
+  routeIntent: "guided" | "maintenance" | null;
+  isOnTrustedRoute: boolean;
+}
+
 type PlayerFacing = "left" | "right" | "up" | "down";
 
 type FacilityScenePalette = {
@@ -267,7 +281,7 @@ export class GameScene extends Phaser.Scene {
   private phase: ScenePhase = "prelude";
   private preludeActive = false;
   private preludeHint =
-    "先靠近同伴按 E 交接，再从右侧外门进去。";
+    "先靠近同伴交接，再从右侧外门进去。";
   private preludeCompanionSpoken = false;
   private preludeGateUnlocked = false;
   private preludeCompanionPrompt: PreludePromptVisuals | null = null;
@@ -312,37 +326,22 @@ export class GameScene extends Phaser.Scene {
 
   update(_: number, delta: number): void {
     if (this.phase === "facility" && this.activeClueId) {
-      if (
-        Phaser.Input.Keyboard.JustDown(this.keys.interact) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.pause)
-      ) {
+      if (this.wasInteractTriggered() || this.wasPauseTriggered()) {
         this.closeActiveClue();
         this.syncHud();
         return;
       }
-
-      const body = this.player.body as Phaser.Physics.Arcade.Body;
-      body.setVelocity(0, 0);
-      this.indicateChargeMs = 0;
-      this.indicateZoneId = null;
-      this.renderIndicateRing(0);
-      this.syncConsoles();
-      this.syncClues();
-      this.syncItems();
-      this.syncPlayerShadow(delta);
-      this.syncHud();
-      return;
     }
 
     if (
       this.phase === "prelude" &&
-      Phaser.Input.Keyboard.JustDown(this.keys.skipPrelude)
+      this.wasSkipPreludeTriggered()
     ) {
       this.skipPreludeToFirstRoom();
       return;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.pause)) {
+    if (this.wasPauseTriggered()) {
       this.handlePauseToggle();
     }
 
@@ -390,6 +389,7 @@ export class GameScene extends Phaser.Scene {
     const activeWaitingZone = room.waitingZones?.find((zone) =>
       rectContains(zone.rect, playerPos),
     );
+    const routeReading = this.getRouteReading(playerPos, room);
     const droneVisibility = room.drones
       .filter((drone) => this.isDroneVisible(drone))
       .map((drone) => drone.id);
@@ -398,11 +398,10 @@ export class GameScene extends Phaser.Scene {
       !room.signalRequiresActivation || runtime.guideFieldPrimed;
     const isInGuideRange =
       runtime.guideMemory.remainingMs > 0 && droneVisibility.length > 0;
-    const isOnTrustedRoute = true;
+    const isOnTrustedRoute = routeReading.isOnTrustedRoute;
 
     const canChargeIndication =
       !controlsLocked &&
-      this.keys.indicate.isDown &&
       isInSignalZone &&
       signalEnabled &&
       body.velocity.length() < 10;
@@ -434,6 +433,7 @@ export class GameScene extends Phaser.Scene {
         isInSignalZone,
         isInGuideRange,
         isOnTrustedRoute,
+        routeIntent: routeReading.routeIntent,
         signalEnabled,
         carryingItemType: this.carriedItemId ? "battery" : null,
         terminalMode: runtime.terminalMode,
@@ -457,12 +457,13 @@ export class GameScene extends Phaser.Scene {
       signalEnabled,
       runtime.guideMemory.remainingMs > 0,
     );
-    this.syncGuidePaths();
+    this.syncGuidePaths(routeReading.activePathId);
     this.syncResidents();
     this.syncStaff();
     this.syncWaitingZones(
       activeWaitingZone?.id ?? null,
-      runtime.receptionConfirmedMs > 0,
+      runtime.receptionConfirmedMs > 0 ||
+        runtime.unlockedDoorIds.includes("reception-door"),
     );
     this.syncItems();
     this.syncPlayerShadow(delta);
@@ -555,7 +556,6 @@ export class GameScene extends Phaser.Scene {
       rightAlt: Phaser.Input.Keyboard.KeyCodes.RIGHT,
       shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
       interact: Phaser.Input.Keyboard.KeyCodes.E,
-      indicate: Phaser.Input.Keyboard.KeyCodes.SPACE,
       skipPrelude: Phaser.Input.Keyboard.KeyCodes.K,
       reset: Phaser.Input.Keyboard.KeyCodes.R,
       pause: Phaser.Input.Keyboard.KeyCodes.ESC,
@@ -566,7 +566,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.input.keyboard?.addCapture([
-      Phaser.Input.Keyboard.KeyCodes.SPACE,
       Phaser.Input.Keyboard.KeyCodes.UP,
       Phaser.Input.Keyboard.KeyCodes.DOWN,
       Phaser.Input.Keyboard.KeyCodes.LEFT,
@@ -1812,7 +1811,7 @@ export class GameScene extends Phaser.Scene {
     });
     companionPromptBody.setOrigin(0.5, 1);
     this.decorateLabel(companionPromptBody);
-    const companionPromptPrefix = this.add.text(0, 0, "按", {
+    const companionPromptPrefix = this.add.text(0, 0, this.getInteractPromptLead(), {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "8px",
       color: "#f8e8d2",
@@ -1823,7 +1822,7 @@ export class GameScene extends Phaser.Scene {
     const companionPromptKeycapBg = this.add.rectangle(0, 0, 14, 11, 0x6f7782, 0.42);
     companionPromptKeycapBg.setOrigin(0, 0.5);
     companionPromptKeycapBg.setStrokeStyle(1, 0xc9d2db, 0.2);
-    const companionPromptKeycapLabel = this.add.text(0, 0, "E", {
+    const companionPromptKeycapLabel = this.add.text(0, 0, this.getInteractPromptKeycap(), {
       fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
       fontSize: "8px",
       fontStyle: "700",
@@ -2942,13 +2941,16 @@ export class GameScene extends Phaser.Scene {
       this.createSignalZone(zone.id, zone.rect);
     }
 
+    const signageOrigin = snapshot.room.signageOrigin ?? { x: 18, y: 28 };
     snapshot.room.signage.forEach((text, index) => {
-      const sign = this.add.text(18, 28 + index * 12, text, {
+      const sign = this.add.text(signageOrigin.x, signageOrigin.y + index * 12, text, {
         fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
         fontSize: "9px",
         color: "#7e93aa",
         resolution: CAMERA_ZOOM,
       });
+      sign.setPadding(4, 2, 4, 2);
+      sign.setBackgroundColor("rgba(6, 10, 16, 0.64)");
       sign.setDepth(4);
       this.decorateLabel(sign);
       this.roomObjects.push(sign);
@@ -3014,10 +3016,14 @@ export class GameScene extends Phaser.Scene {
       !snapshot.room.signalRequiresActivation || snapshot.runtime.guideFieldPrimed,
       snapshot.runtime.guideMemory.remainingMs > 0,
     );
-    this.syncGuidePaths();
+    this.syncGuidePaths(null);
     this.syncResidents();
     this.syncStaff();
-    this.syncWaitingZones(null, snapshot.runtime.receptionConfirmedMs > 0);
+    this.syncWaitingZones(
+      null,
+      snapshot.runtime.receptionConfirmedMs > 0 ||
+        snapshot.runtime.unlockedDoorIds.includes("reception-door"),
+    );
     this.syncHud();
   }
 
@@ -3066,18 +3072,34 @@ export class GameScene extends Phaser.Scene {
 
   private getInputVelocity(): Phaser.Math.Vector2 {
     const velocity = new Phaser.Math.Vector2(0, 0);
-    if (this.keys.up.isDown || this.keys.upAlt.isDown) {
+    if (
+      this.keys.up.isDown ||
+      this.keys.upAlt.isDown
+    ) {
       velocity.y -= 1;
     }
-    if (this.keys.down.isDown || this.keys.downAlt.isDown) {
+    if (
+      this.keys.down.isDown ||
+      this.keys.downAlt.isDown
+    ) {
       velocity.y += 1;
     }
-    if (this.keys.left.isDown || this.keys.leftAlt.isDown) {
+    if (
+      this.keys.left.isDown ||
+      this.keys.leftAlt.isDown
+    ) {
       velocity.x -= 1;
     }
-    if (this.keys.right.isDown || this.keys.rightAlt.isDown) {
+    if (
+      this.keys.right.isDown ||
+      this.keys.rightAlt.isDown
+    ) {
       velocity.x += 1;
     }
+
+    const touchVector = getTouchMoveVector();
+    velocity.x += touchVector.x;
+    velocity.y += touchVector.y;
 
     if (velocity.lengthSq() > 1) {
       velocity.normalize();
@@ -3233,7 +3255,7 @@ export class GameScene extends Phaser.Scene {
     if (
       !this.preludeActive ||
       this.preludeArrivalState !== "ready" ||
-      !Phaser.Input.Keyboard.JustDown(this.keys.interact)
+      !this.wasInteractTriggered()
     ) {
       return;
     }
@@ -3387,7 +3409,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private processInteractions(): void {
-    if (!Phaser.Input.Keyboard.JustDown(this.keys.interact)) {
+    if (!this.wasInteractTriggered()) {
       return;
     }
 
@@ -3491,6 +3513,52 @@ export class GameScene extends Phaser.Scene {
       nearestItem.item.slotId = null;
     }
     this.playKeyboardClick("light");
+  }
+
+  private isPreludeInteractionAvailable(): boolean {
+    if (!this.preludeActive || this.preludeArrivalState !== "ready") {
+      return false;
+    }
+
+    return distance(
+      { x: this.player.x, y: this.player.y },
+      PRELUDE_COMPANION_POINT,
+    ) <= 28;
+  }
+
+  private isFacilityInteractionAvailable(): boolean {
+    const snapshot = this.session.getSnapshot();
+    if (snapshot.isPaused || snapshot.runtime.alertCountdownMs !== null) {
+      return false;
+    }
+
+    if (this.carriedItemId) {
+      return true;
+    }
+
+    const playerPos = { x: this.player.x, y: this.player.y };
+
+    const isNearConsole = Array.from(this.consoleObjects.values()).some(
+      (entry) => distanceToRect(playerPos, entry.def.rect) <= INTERACT_RANGE,
+    );
+    if (isNearConsole) {
+      return true;
+    }
+
+    const isNearClue = Array.from(this.clueObjects.values()).some(
+      (clue) => distanceToRect(playerPos, clue.def.rect) <= INTERACT_RANGE,
+    );
+    if (isNearClue) {
+      return true;
+    }
+
+    return Array.from(this.itemObjects.values())
+      .filter((item) => !this.carriedItemId || item.id !== this.carriedItemId)
+      .some(
+        (item) =>
+          distance(playerPos, { x: item.sprite.x, y: item.sprite.y }) <=
+          INTERACT_RANGE,
+      );
   }
 
   private isSlotOccupiedByOtherItem(slotId: string, itemId: string): boolean {
@@ -3646,9 +3714,9 @@ export class GameScene extends Phaser.Scene {
       clue.label.setColor(isActive ? "#fff7e0" : isNear ? "#ffffff" : palette.label);
       clue.label.setText(
         isActive
-          ? `${clue.def.label}\n再次按 E 收起`
+          ? `${clue.def.label}\n${this.getCluePromptText("close")}`
           : isNear
-            ? `${clue.def.label}\n按 E 查看`
+            ? `${clue.def.label}\n${this.getCluePromptText("open")}`
             : clue.def.label,
       );
     }
@@ -3746,8 +3814,46 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncGuidePaths(): void {
+  private syncGuidePaths(activePathId: string | null): void {
     this.guideGraphics.clear();
+
+    for (const path of this.currentRoom.guidePaths) {
+      if (path.points.length < 2) {
+        continue;
+      }
+
+      const isActive = path.id === activePathId;
+      const color =
+        path.color === "amber"
+          ? 0xf6c46b
+          : 0x72ddff;
+      const corridorWidth = (path.tolerance + GUIDE_PATH_EXTRA_TOLERANCE) * 2;
+
+      this.guideGraphics.lineStyle(
+        corridorWidth,
+        color,
+        isActive ? 0.11 : 0.05,
+      );
+      this.guideGraphics.beginPath();
+      this.guideGraphics.moveTo(path.points[0].x, path.points[0].y);
+      for (let index = 1; index < path.points.length; index += 1) {
+        this.guideGraphics.lineTo(path.points[index].x, path.points[index].y);
+      }
+      this.guideGraphics.strokePath();
+
+      this.guideGraphics.lineStyle(3, color, isActive ? 0.6 : 0.24);
+      this.guideGraphics.beginPath();
+      this.guideGraphics.moveTo(path.points[0].x, path.points[0].y);
+      for (let index = 1; index < path.points.length; index += 1) {
+        this.guideGraphics.lineTo(path.points[index].x, path.points[index].y);
+      }
+      this.guideGraphics.strokePath();
+
+      for (const point of path.points) {
+        this.guideGraphics.fillStyle(color, isActive ? 0.28 : 0.14);
+        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 4 : 3);
+      }
+    }
   }
 
   private syncItems(): void {
@@ -4210,6 +4316,7 @@ export class GameScene extends Phaser.Scene {
         carrying: "空手",
         hint: this.preludeHint,
         hintTone: "neutral",
+        interactEnabled: this.isPreludeInteractionAvailable(),
       });
       return;
     }
@@ -4236,6 +4343,7 @@ export class GameScene extends Phaser.Scene {
       carrying: this.carriedItemId ? "电池" : "空手",
       hint: snapshot.runtime.message ?? snapshot.room.hint,
       hintTone,
+      interactEnabled: this.isFacilityInteractionAvailable(),
     });
   }
 
@@ -4246,6 +4354,61 @@ export class GameScene extends Phaser.Scene {
     return {
       width: room.dimensions?.width ?? DEFAULT_ROOM_WIDTH,
       height: room.dimensions?.height ?? DEFAULT_ROOM_HEIGHT,
+    };
+  }
+
+  private getRouteReading(
+    playerPosition: { x: number; y: number },
+    room: RoomDefinition,
+  ): RouteReading {
+    if (room.guidePaths.length === 0) {
+      return {
+        activePathId: null,
+        routeIntent: null,
+        isOnTrustedRoute: true,
+      };
+    }
+
+    let nearest:
+      | {
+          pathId: string;
+          distance: number;
+          tolerance: number;
+          routeIntent: "guided" | "maintenance";
+        }
+      | null = null;
+
+    for (const path of room.guidePaths) {
+      const distanceToPath = distanceToPolyline(playerPosition, path.points);
+      if (!Number.isFinite(distanceToPath)) {
+        continue;
+      }
+
+      if (!nearest || distanceToPath < nearest.distance) {
+        nearest = {
+          pathId: path.id,
+          distance: distanceToPath,
+          tolerance: path.tolerance + GUIDE_PATH_EXTRA_TOLERANCE,
+          routeIntent: path.activeWhen,
+        };
+      }
+    }
+
+    if (!nearest) {
+      return {
+        activePathId: null,
+        routeIntent: null,
+        isOnTrustedRoute: true,
+      };
+    }
+
+    const highlightRadius = nearest.tolerance + GUIDE_PATH_HIGHLIGHT_TOLERANCE;
+    const isOnTrustedRoute = nearest.distance <= nearest.tolerance;
+
+    return {
+      activePathId: nearest.distance <= highlightRadius ? nearest.pathId : null,
+      routeIntent: isOnTrustedRoute ? nearest.routeIntent : null,
+      isOnTrustedRoute,
     };
   }
 
@@ -4266,7 +4429,44 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isSpeedBoostActive(): boolean {
-    return this.keys.shift.isDown;
+    return this.keys.shift.isDown || isTouchHoldActionActive("speedBoost");
+  }
+
+  private wasInteractTriggered(): boolean {
+    return (
+      Phaser.Input.Keyboard.JustDown(this.keys.interact) ||
+      consumeTouchPressAction("interact")
+    );
+  }
+
+  private wasPauseTriggered(): boolean {
+    return (
+      Phaser.Input.Keyboard.JustDown(this.keys.pause) ||
+      consumeTouchPressAction("pause")
+    );
+  }
+
+  private wasSkipPreludeTriggered(): boolean {
+    return (
+      Phaser.Input.Keyboard.JustDown(this.keys.skipPrelude) ||
+      consumeTouchPressAction("skipPrelude")
+    );
+  }
+
+  private getInteractPromptLead(): string {
+    return areTouchControlsEnabled() ? "点" : "按";
+  }
+
+  private getInteractPromptKeycap(): string {
+    return areTouchControlsEnabled() ? "交互" : "E";
+  }
+
+  private getCluePromptText(mode: "open" | "close"): string {
+    if (areTouchControlsEnabled()) {
+      return mode === "close" ? "再次点交互收起" : "点交互查看";
+    }
+
+    return mode === "close" ? "再次按 E 收起" : "按 E 查看";
   }
 
   private renderIndicateRing(progress: number): void {

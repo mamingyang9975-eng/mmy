@@ -1,0 +1,58 @@
+
+> misread-facility@0.1.0 dev
+> vite
+
+
+  VITE v7.3.2  ready in 369 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://10.128.0.3:5173/
+3:15:47 AM [vite] (client) page reload src/ui/UiController.ts
+3:17:20 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:17:26 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:17:33 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:17:40 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:17:56 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:18:09 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:18:30 AM [vite] (client) page reload src/ui/UiController.ts
+3:19:06 AM [vite] (client) hmr update /src/styles.css
+3:19:10 AM [vite] (client) hmr update /src/styles.css
+3:19:57 AM [vite] (client) page reload src/ui/UiController.ts
+3:26:59 AM [vite] (client) page reload src/ui/touchControls.ts
+3:27:24 AM [vite] (client) page reload src/ui/UiController.ts
+3:27:46 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:28:19 AM [vite] (client) hmr update /src/styles.css
+3:28:30 AM [vite] (client) page reload src/ui/UiController.ts
+3:34:19 AM [vite] (client) page reload src/ui/UiController.ts
+3:34:49 AM [vite] (client) hmr update /src/styles.css
+3:39:33 AM [vite] (client) page reload src/ui/UiController.ts
+3:39:33 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:39:33 AM [vite] (client) hmr update /src/styles.css
+3:42:13 AM [vite] (client) page reload src/ui/UiController.ts
+3:42:37 AM [vite] (client) hmr update /src/styles.css
+3:44:50 AM [vite] (client) hmr update /src/styles.css
+3:45:03 AM [vite] (client) hmr update /src/styles.css
+3:48:49 AM [vite] (client) hmr update /src/styles.css
+3:49:25 AM [vite] (client) page reload src/game/simulation/session.ts
+3:49:30 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:51:28 AM [vite] (client) hmr update /src/styles.css
+3:56:15 AM [vite] (client) page reload src/ui/UiController.ts
+3:56:25 AM [vite] (client) page reload src/ui/UiController.ts
+3:56:36 AM [vite] (client) hmr update /src/styles.css
+3:56:56 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+3:57:10 AM [vite] (client) page reload src/ui/UiController.ts
+3:57:36 AM [vite] (client) page reload src/ui/UiController.ts
+4:04:12 AM [vite] (client) page reload src/ui/touchControls.ts
+4:04:26 AM [vite] (client) page reload src/ui/UiController.ts
+4:04:38 AM [vite] (client) hmr update /src/styles.css
+4:04:51 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:08:14 AM [vite] (client) page reload src/game/content/rooms.ts
+4:08:14 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:42:38 AM [vite] (client) page reload src/game/simulation/rules.ts
+4:42:54 AM [vite] (client) page reload src/game/simulation/session.ts
+4:43:08 AM [vite] (client) page reload src/game/content/rooms.ts
+4:43:40 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:43:54 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:44:08 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:44:23 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+4:45:44 AM [vite] (client) page reload src/game/simulation/session.ts

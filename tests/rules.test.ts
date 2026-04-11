@@ -191,6 +191,32 @@ describe("advanceInterpretation", () => {
 
     expect(result.tag).toBe("maintenanceCandidate");
   });
+
+  it("lets a blue guide corridor reinforce visitor interpretation", () => {
+    const result = advanceInterpretation(
+      {
+        movementMode: "slow",
+        speed: 42,
+        isIndicating: false,
+        isInSignalZone: false,
+        isInGuideRange: false,
+        isOnTrustedRoute: true,
+        routeIntent: "guided",
+        signalEnabled: true,
+        carryingItemType: null,
+        terminalMode: "none",
+        visibleDroneIds: [],
+        activeWaitingZoneId: null,
+      },
+      createInterpretationScores(),
+      "intruder",
+      createGuideMemory(),
+      16,
+    );
+
+    expect(result.scores.guidedVisitor).toBeGreaterThan(result.scores.intruder);
+    expect(result.tag).toBe("guidedVisitor");
+  });
 });
 
 describe("evaluateDroneState", () => {
@@ -343,7 +369,7 @@ describe("door and terminal rules", () => {
 });
 
 describe("GameSession", () => {
-  it("keeps room one as intruder until the visitor registration panel is used", () => {
+  it("keeps room one's door closed until registration is followed by guidance", () => {
     const session = new GameSession();
     session.start();
 
@@ -368,22 +394,28 @@ describe("GameSession", () => {
 
     session.activateConsole("registration-console-a");
     expect(session.getSnapshot().runtime.visitorFlowUnlocked).toBe(true);
-    expect(session.getSnapshot().runtime.interpretation).toBe("guidedVisitor");
+    expect(
+      session.canOpenDoor(ROOMS[0].doors[0], {
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(false);
 
     session.updateIntent(
       {
         movementMode: "slow",
-        speed: 32,
-        isIndicating: false,
-        isInSignalZone: false,
+        speed: 0,
+        isIndicating: true,
+        isInSignalZone: true,
         isInGuideRange: false,
-        isOnTrustedRoute: false,
-        signalEnabled: false,
+        isOnTrustedRoute: true,
+        routeIntent: "guided",
+        signalEnabled: true,
         carryingItemType: null,
         terminalMode: "none",
-        visibleDroneIds: [],
+        visibleDroneIds: ["scanner-a"],
       },
-      120,
+      2600,
     );
 
     const snapshot = session.getSnapshot();
@@ -632,6 +664,42 @@ describe("GameSession", () => {
 
     const snapshot = session.getSnapshot();
     expect(snapshot.runtime.receptionConfirmedMs).toBeGreaterThan(0);
+    expect(
+      session.canOpenDoor(roomById("room-1b").doors[0], {
+        movementMode: "slow",
+        isInDroneRange: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the reception buffer door available after the confirmation timer expires", () => {
+    const session = new GameSession();
+    session.start();
+    session.activateConsole("registration-console-a");
+    advanceToRoom(session, "room-1b");
+
+    const waitingSnapshot = {
+      movementMode: "slow" as const,
+      speed: 0,
+      isIndicating: false,
+      isInSignalZone: false,
+      isInGuideRange: false,
+      isOnTrustedRoute: false,
+      signalEnabled: false,
+      carryingItemType: null,
+      terminalMode: "none" as const,
+      visibleDroneIds: [],
+      activeWaitingZoneId: "queue-a",
+    };
+
+    session.updateIntent(waitingSnapshot, 3000);
+    session.updateIntent(waitingSnapshot, 4000);
+    session.updateIntent(waitingSnapshot, 120);
+    session.updateIntent(waitingSnapshot, 6000);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.runtime.receptionConfirmedMs).toBe(0);
+    expect(snapshot.runtime.unlockedDoorIds).toContain("reception-door");
     expect(
       session.canOpenDoor(roomById("room-1b").doors[0], {
         movementMode: "slow",

@@ -102,6 +102,25 @@ export function advanceInterpretation(
     scores.intruder = clampScore(scores.intruder + 1.6);
   }
 
+  if (snapshot.isOnTrustedRoute) {
+    if (snapshot.routeIntent === "maintenance") {
+      scores.maintenanceCandidate = clampScore(
+        scores.maintenanceCandidate +
+          (snapshot.terminalMode === "maintenanceRequest"
+            ? 0.9
+            : snapshot.carryingItemType === "battery"
+              ? 0.55
+              : 0.2),
+      );
+    } else {
+      scores.guidedVisitor = clampScore(
+        scores.guidedVisitor +
+          (snapshot.movementMode === "slow" ? 0.9 : 0.35),
+      );
+      scores.intruder = clampScore(scores.intruder - 0.35);
+    }
+  }
+
   if (
     snapshot.isInSignalZone &&
     snapshot.isIndicating &&

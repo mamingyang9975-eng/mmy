@@ -1,4 +1,11 @@
 import type { CompletionSummary } from "../game/simulation/types";
+import {
+  queueTouchPressAction,
+  resetTouchControls,
+  setTouchControlsEnabled,
+  setTouchHoldAction,
+  setTouchMoveVector,
+} from "./touchControls";
 
 export interface UiCommands {
   start: () => void;
@@ -25,6 +32,7 @@ export interface HudViewModel {
   carrying: string;
   hint: string;
   hintTone?: HudTone;
+  interactEnabled: boolean;
 }
 
 interface ModalAction {
@@ -42,8 +50,11 @@ interface PhoneMessageData {
 
 type ModalState = "hidden" | "phone" | "generic";
 
+const CLUE_TOAST_DURATION_MS = 3200;
+
 export class UiController {
   private commands: UiCommands | null = null;
+  private readonly touchControlsEnabled: boolean;
   private readonly roomValue: HTMLElement;
   private readonly identityValue: HTMLElement;
   private readonly tendencyValue: HTMLElement;
@@ -52,16 +63,27 @@ export class UiController {
   private readonly terminalValue: HTMLElement;
   private readonly carryValue: HTMLElement;
   private readonly hintValue: HTMLElement;
+  private interactButton!: HTMLButtonElement;
   private readonly modal: HTMLElement;
   private readonly modalTitle: HTMLElement;
   private readonly modalBody: HTMLElement;
   private readonly modalActions: HTMLElement;
+  private readonly clueToast: HTMLElement;
+  private readonly clueToastTitle: HTMLElement;
+  private readonly clueToastBody: HTMLElement;
   private readonly phoneButton: HTMLButtonElement;
   private readonly skipPreludeHint: HTMLDivElement;
+  private readonly skipPreludeButton: HTMLButtonElement;
   private lastPhoneMessage: PhoneMessageData | null = null;
   private activeModal: ModalState = "hidden";
+  private clueToastTimeoutId: number | null = null;
 
   constructor(root: HTMLElement) {
+    this.touchControlsEnabled = this.detectTouchControls();
+    setTouchControlsEnabled(this.touchControlsEnabled);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+    window.addEventListener("blur", this.handleWindowBlur);
+
     root.className = "app-shell";
 
     const frame = document.createElement("div");
@@ -70,6 +92,7 @@ export class UiController {
     const gameRoot = document.createElement("div");
     gameRoot.id = "game-root";
     gameRoot.className = "game-root";
+    gameRoot.dataset.touchControls = String(this.touchControlsEnabled);
 
     const gameOverlay = document.createElement("div");
     gameOverlay.className = "game-overlay";
@@ -98,10 +121,32 @@ export class UiController {
     this.skipPreludeHint.className = "game-skip-hint";
     this.skipPreludeHint.textContent = "按 K 跳过";
     this.skipPreludeHint.hidden = true;
-    rightActions.append(this.skipPreludeHint);
+    this.skipPreludeButton = document.createElement("button");
+    this.skipPreludeButton.type = "button";
+    this.skipPreludeButton.className = "game-overlay-button game-overlay-button-warn";
+    this.skipPreludeButton.textContent = "跳过前奏";
+    this.skipPreludeButton.hidden = true;
+    this.skipPreludeButton.addEventListener("click", () => {
+      queueTouchPressAction("skipPrelude");
+    });
+    const touchPauseButton = document.createElement("button");
+    touchPauseButton.type = "button";
+    touchPauseButton.className = "game-overlay-button";
+    touchPauseButton.textContent = "暂停";
+    touchPauseButton.hidden = !this.touchControlsEnabled;
+    touchPauseButton.addEventListener("click", () => {
+      queueTouchPressAction("pause");
+    });
+    rightActions.append(
+      this.skipPreludeHint,
+      this.skipPreludeButton,
+      touchPauseButton,
+    );
     overlayBottom.append(this.phoneButton, rightActions);
 
+    const touchControls = this.createTouchControls();
     gameOverlay.append(overlayTop, overlayBottom);
+    gameRoot.append(touchControls);
     gameRoot.append(gameOverlay);
 
     const hud = document.createElement("aside");
@@ -148,6 +193,17 @@ export class UiController {
     this.modalActions.className = "modal-actions";
     this.modal.append(this.modalTitle, this.modalBody, this.modalActions);
 
+    this.clueToast = document.createElement("section");
+    this.clueToast.className = "clue-toast hidden";
+    this.clueToast.setAttribute("aria-live", "polite");
+    this.clueToast.setAttribute("role", "status");
+    this.clueToastTitle = document.createElement("h2");
+    this.clueToastTitle.className = "clue-toast-title";
+    this.clueToastBody = document.createElement("div");
+    this.clueToastBody.className = "clue-toast-body";
+    this.clueToast.append(this.clueToastTitle, this.clueToastBody);
+    gameRoot.append(this.clueToast);
+
     frame.append(gameRoot, hud, this.modal);
     root.append(frame);
   }
@@ -172,6 +228,12 @@ export class UiController {
     this.applyTone(this.terminalValue, viewModel.terminalTone);
     this.applyTone(this.hintValue, viewModel.hintTone);
     this.applyTone(this.overlayTendencyValue, viewModel.hintTone);
+    this.interactButton.disabled = !viewModel.interactEnabled;
+    this.interactButton.dataset.available = String(viewModel.interactEnabled);
+    this.interactButton.setAttribute(
+      "aria-disabled",
+      String(!viewModel.interactEnabled),
+    );
   }
 
   showIntro(): void {
@@ -182,7 +244,9 @@ export class UiController {
         "我只能送你到外门。进去以后别像在躲，像是本来就在这套流程里。",
         "看系统怎么读你，不要只盯出口。",
       ],
-      "WASD 移动，Shift 快走，E 交互，Space 原地示意",
+      this.touchControlsEnabled
+        ? "左下按住会出现半透明轮盘，拖动移动；右下可快走、交互。进入示意区停留片刻会自动示意。"
+        : "WASD 移动，Shift 快走，E 交互。进入示意区停留片刻会自动示意。",
       [
         {
           label: "收起手机",
@@ -235,23 +299,19 @@ export class UiController {
     paragraphs: string[],
     onClose: () => void,
   ): void {
-    this.showModal(title, paragraphs, [
-      {
-        label: "收起纸页",
-        action: onClose,
-        primary: true,
-      },
-    ]);
+    this.showClueToast(title, paragraphs, onClose);
   }
 
   hideModal(): void {
+    this.hideClueToast();
     this.modal.className = "modal hidden";
     this.activeModal = "hidden";
     this.updatePhoneButton();
   }
 
   setPreludeSkipHintVisible(visible: boolean): void {
-    this.skipPreludeHint.hidden = !visible;
+    this.skipPreludeHint.hidden = !visible || this.touchControlsEnabled;
+    this.skipPreludeButton.hidden = !visible || !this.touchControlsEnabled;
   }
 
   private showPhoneMessage(
@@ -260,6 +320,7 @@ export class UiController {
     footer: string,
     actions: ModalAction[],
   ): void {
+    this.hideClueToast();
     this.lastPhoneMessage = {
       sender,
       messages: [...messages],
@@ -333,6 +394,7 @@ export class UiController {
     paragraphs: string[],
     actions: ModalAction[],
   ): void {
+    this.hideClueToast();
     this.activeModal = "generic";
     this.updatePhoneButton();
     this.modal.className = "modal";
@@ -350,6 +412,7 @@ export class UiController {
   }
 
   private showCompletionReport(summary: CompletionSummary): void {
+    this.hideClueToast();
     this.activeModal = "generic";
     this.updatePhoneButton();
     this.modal.className = "modal completion-modal";
@@ -399,6 +462,37 @@ export class UiController {
     this.modal.classList.remove("hidden");
   }
 
+  private showClueToast(
+    title: string,
+    paragraphs: string[],
+    onClose: () => void,
+  ): void {
+    this.hideClueToast();
+    this.clueToastTitle.textContent = title;
+    this.clueToastBody.replaceChildren(
+      ...paragraphs.map((text) => {
+        const paragraph = document.createElement("p");
+        paragraph.textContent = text;
+        return paragraph;
+      }),
+    );
+    this.clueToast.classList.remove("hidden");
+    this.clueToastTimeoutId = window.setTimeout(() => {
+      this.clueToastTimeoutId = null;
+      this.hideClueToast();
+      onClose();
+    }, CLUE_TOAST_DURATION_MS);
+  }
+
+  private hideClueToast(): void {
+    if (this.clueToastTimeoutId !== null) {
+      window.clearTimeout(this.clueToastTimeoutId);
+      this.clueToastTimeoutId = null;
+    }
+
+    this.clueToast.classList.add("hidden");
+  }
+
   private renderActions(actions: ModalAction[]): void {
     this.modalActions.replaceChildren(
       ...actions.map((item) => {
@@ -439,6 +533,212 @@ export class UiController {
     );
   }
 
+  private createTouchControls(): HTMLDivElement {
+    const controls = document.createElement("div");
+    controls.className = "touch-controls";
+    controls.dataset.enabled = String(this.touchControlsEnabled);
+
+    const joystick = this.createJoystick();
+
+    const actions = document.createElement("div");
+    actions.className = "touch-cluster touch-actions";
+    const speedBoostButton = this.createHoldButton(
+      "快走",
+      "touch-button-secondary",
+      () => {
+        setTouchHoldAction("speedBoost", true);
+      },
+      () => {
+        setTouchHoldAction("speedBoost", false);
+      },
+    );
+    speedBoostButton.classList.add("touch-button-speed");
+
+    const interactButton = this.createPressButton(
+      "交互",
+      "touch-button-primary",
+      () => {
+        queueTouchPressAction("interact");
+      },
+    );
+    interactButton.disabled = true;
+    interactButton.dataset.available = "false";
+    this.interactButton = interactButton;
+
+    actions.append(speedBoostButton, interactButton);
+
+    controls.append(joystick, actions);
+    return controls;
+  }
+
+  private createJoystick(): HTMLDivElement {
+    const zone = document.createElement("div");
+    zone.className = "touch-cluster touch-joystick-zone";
+    zone.setAttribute("aria-label", "移动触发区");
+
+    const plate = document.createElement("div");
+    plate.className = "touch-joystick-plate";
+    plate.setAttribute("aria-label", "移动轮盘");
+    plate.hidden = true;
+
+    const thumb = document.createElement("div");
+    thumb.className = "touch-joystick-thumb";
+    plate.append(thumb);
+
+    let activePointerId: number | null = null;
+    let originX = 0;
+    let originY = 0;
+
+    const updateFromPointer = (event: PointerEvent): void => {
+      const rawX = event.clientX - originX;
+      const rawY = event.clientY - originY;
+      const maxDistance = Math.max(20, plate.offsetWidth * 0.28);
+      const distance = Math.hypot(rawX, rawY);
+      const scale = distance > maxDistance ? maxDistance / distance : 1;
+      const clampedX = rawX * scale;
+      const clampedY = rawY * scale;
+
+      setTouchMoveVector(clampedX / maxDistance, clampedY / maxDistance);
+      thumb.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
+      plate.dataset.active = "true";
+    };
+
+    const resetJoystick = (): void => {
+      setTouchMoveVector(0, 0);
+      thumb.style.transform = "translate(-50%, -50%)";
+      plate.hidden = true;
+      delete plate.dataset.active;
+    };
+
+    const activate = (event: PointerEvent): void => {
+      event.preventDefault();
+      if (activePointerId !== null) {
+        return;
+      }
+
+      const zoneRect = zone.getBoundingClientRect();
+      originX = event.clientX;
+      originY = event.clientY;
+      plate.hidden = false;
+      plate.style.left = `${originX - zoneRect.left}px`;
+      plate.style.top = `${originY - zoneRect.top}px`;
+
+      activePointerId = event.pointerId;
+      zone.setPointerCapture(event.pointerId);
+      updateFromPointer(event);
+    };
+
+    const move = (event: PointerEvent): void => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      updateFromPointer(event);
+    };
+
+    const release = (event?: PointerEvent): void => {
+      if (activePointerId === null) {
+        return;
+      }
+      if (event && event.pointerId !== activePointerId) {
+        return;
+      }
+
+      activePointerId = null;
+      resetJoystick();
+    };
+
+    zone.addEventListener("pointerdown", activate);
+    zone.addEventListener("pointermove", move);
+    zone.addEventListener("pointerup", release);
+    zone.addEventListener("pointercancel", release);
+    zone.addEventListener("lostpointercapture", release);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") {
+        release();
+      }
+    });
+    window.addEventListener("blur", () => release());
+
+    resetJoystick();
+    zone.append(plate);
+    return zone;
+  }
+
+  private createPressButton(
+    label: string,
+    className: string,
+    onPress: () => void,
+  ): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `touch-button ${className}`;
+    button.textContent = label;
+    button.addEventListener("pointerdown", (event) => {
+      if (button.disabled) {
+        return;
+      }
+      event.preventDefault();
+      button.dataset.active = "true";
+      onPress();
+    });
+    const release = (): void => {
+      delete button.dataset.active;
+    };
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("lostpointercapture", release);
+    return button;
+  }
+
+  private createHoldButton(
+    label: string,
+    className: string,
+    onHoldStart: () => void,
+    onHoldEnd: () => void,
+  ): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `touch-button ${className}`;
+    button.textContent = label;
+
+    let activePointerId: number | null = null;
+
+    const activate = (event: PointerEvent): void => {
+      event.preventDefault();
+      if (activePointerId !== null) {
+        return;
+      }
+
+      activePointerId = event.pointerId;
+      button.dataset.active = "true";
+      button.setPointerCapture(event.pointerId);
+      onHoldStart();
+    };
+
+    const release = (event?: PointerEvent): void => {
+      if (activePointerId === null) {
+        return;
+      }
+      if (event && event.pointerId !== activePointerId) {
+        return;
+      }
+
+      activePointerId = null;
+      delete button.dataset.active;
+      onHoldEnd();
+    };
+
+    button.addEventListener("pointerdown", activate);
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("lostpointercapture", release);
+    button.addEventListener("pointerleave", release);
+
+    return button;
+  }
+
   private createMetric(parent: HTMLElement, label: string): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "metric";
@@ -472,4 +772,23 @@ export class UiController {
     }
     element.dataset.tone = tone;
   }
+
+  private detectTouchControls(): boolean {
+    const supportsTouchPoints =
+      typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+    const coarsePointer =
+      typeof window !== "undefined" &&
+      window.matchMedia("(pointer: coarse), (hover: none)").matches;
+    return supportsTouchPoints || coarsePointer;
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (document.visibilityState !== "visible") {
+      resetTouchControls();
+    }
+  };
+
+  private readonly handleWindowBlur = (): void => {
+    resetTouchControls();
+  };
 }

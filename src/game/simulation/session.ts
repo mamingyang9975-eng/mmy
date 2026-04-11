@@ -270,20 +270,21 @@ export class GameSession {
           );
 
     if (this.getRoom().id === "room-1") {
-      if (this.runtime.visitorFlowUnlocked) {
-        this.runtime.interpretationScores.guidedVisitor = Math.max(
-          this.runtime.interpretationScores.guidedVisitor,
-          8,
-        );
-        this.runtime.interpretationScores.intruder = 0;
-        this.runtime.interpretation = "guidedVisitor";
-      } else {
+      if (!this.runtime.visitorFlowUnlocked) {
         this.runtime.interpretationScores.guidedVisitor = 0;
         this.runtime.interpretationScores.intruder = Math.max(
           this.runtime.interpretationScores.intruder,
           4,
         );
         this.runtime.interpretation = "intruder";
+      } else if (
+        this.runtime.guideMemory.remainingMs <= 0 &&
+        !snapshot.isOnTrustedRoute
+      ) {
+        this.runtime.interpretationScores.guidedVisitor = Math.min(
+          this.runtime.interpretationScores.guidedVisitor,
+          5.4,
+        );
       }
     }
 
@@ -374,13 +375,12 @@ export class GameSession {
 
     if (consoleDef.action === "registerVisitor") {
       this.runtime.visitorFlowUnlocked = true;
-      this.runtime.interpretation = "guidedVisitor";
       this.runtime.interpretationScores = {
-        intruder: 0,
-        guidedVisitor: 8,
+        intruder: 2.2,
+        guidedVisitor: 3.6,
         maintenanceCandidate: 0,
       };
-      this.runtime.message = "访客记录已经写入系统。";
+      this.runtime.message = "访客记录已经补录。先在引导区停一拍，再沿蓝线靠近门禁。";
       return;
     }
 
@@ -435,6 +435,8 @@ export class GameSession {
       return canDoorOpen(
         {
           ...door.rule,
+          requiresReceptionConfirmed: false,
+          requiresOfficeClearance: false,
           requiresSlowMovement: false,
           requiresSlowInDroneRange: false,
         },
@@ -533,10 +535,10 @@ export class GameSession {
       return;
     }
 
-    this.runtime.interpretationScores.guidedVisitor += 2.8;
+    this.runtime.interpretationScores.guidedVisitor += 0.55;
     this.runtime.interpretationScores.intruder = Math.max(
       0,
-      this.runtime.interpretationScores.intruder - 0.9,
+      this.runtime.interpretationScores.intruder - 0.3,
     );
   }
 
@@ -778,6 +780,19 @@ export class GameSession {
     ) {
       runtimeState.hasConfirmedCurrentCycle = true;
       this.runtime.receptionConfirmedMs = RECEPTION_CONFIRM_MS;
+      for (const door of this.getRoom().doors) {
+        const requiresReceptionConfirmed =
+          door.rule.requiresReceptionConfirmed ||
+          (door.alternateRules ?? []).some(
+            (rule) => rule.requiresReceptionConfirmed,
+          );
+        if (
+          requiresReceptionConfirmed &&
+          !this.runtime.unlockedDoorIds.includes(door.id)
+        ) {
+          this.runtime.unlockedDoorIds.push(door.id);
+        }
+      }
       this.runtime.message = "前台把你写进了这轮接待。";
     }
 
@@ -1037,12 +1052,21 @@ export class GameSession {
     const room = this.getRoom();
 
     if (room.id === "room-1") {
+      if (
+        this.runtime.visitorFlowUnlocked &&
+        this.runtime.guideMemory.remainingMs > 0
+      ) {
+        return "系统开始沿蓝线引导你了。保持慢行，别把自己走回闯入读法。";
+      }
       return this.runtime.visitorFlowUnlocked
-        ? "登记记录已经亮起来了。"
+        ? "登记记录已经亮起来了。先在引导区停一拍。"
         : "门禁先看登记记录。";
     }
 
     if (room.id === "room-1b") {
+      if (this.runtime.unlockedDoorIds.includes("reception-door")) {
+        return "前台已经把你写进了这轮接待。";
+      }
       return this.runtime.receptionConfirmedMs > 0
         ? "前台刚点过头。"
         : "前台还没替你说话。";

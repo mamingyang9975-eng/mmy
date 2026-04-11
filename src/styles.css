@@ -81,6 +81,11 @@ select {
   image-rendering: crisp-edges;
 }
 
+.game-root,
+.game-root canvas {
+  touch-action: none;
+}
+
 .game-overlay {
   position: absolute;
   inset: 0;
@@ -178,8 +183,23 @@ select {
   gap: 16px;
 }
 
+.game-root[data-touch-controls="true"] .game-overlay-bottom {
+  margin-bottom: 120px;
+}
+
+.game-root[data-touch-controls="true"] .game-overlay-actions-right {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: min(34vw, 180px);
+}
+
 .game-overlay-actions-right {
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
   align-items: flex-end;
   flex: 1 1 auto;
@@ -209,6 +229,42 @@ select {
     background-color 120ms ease;
 }
 
+.game-overlay-button {
+  pointer-events: auto;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(107, 226, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(13, 20, 31, 0.78), rgba(9, 14, 22, 0.7)),
+    radial-gradient(circle at top, rgba(107, 226, 255, 0.12), transparent 65%);
+  color: rgba(234, 244, 253, 0.92);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.game-overlay-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(107, 226, 255, 0.4);
+}
+
+.game-overlay-button-warn {
+  border-color: rgba(240, 201, 111, 0.2);
+  background:
+    linear-gradient(180deg, rgba(13, 20, 31, 0.78), rgba(9, 14, 22, 0.7)),
+    radial-gradient(circle at top, rgba(240, 201, 111, 0.14), transparent 65%);
+  color: rgba(247, 234, 198, 0.96);
+}
+
 .game-phone-button:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(107, 226, 255, 0.4);
@@ -235,6 +291,182 @@ select {
     inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   backdrop-filter: blur(12px);
   white-space: nowrap;
+}
+
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 16px 18px 18px;
+}
+
+.touch-controls[data-enabled="false"] {
+  display: none;
+}
+
+.touch-cluster {
+  pointer-events: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.touch-joystick-zone {
+  position: relative;
+  width: min(42vw, 320px);
+  height: min(34vh, 240px);
+  align-self: end;
+  justify-self: start;
+  touch-action: none;
+}
+
+.touch-joystick-plate {
+  position: absolute;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  border: 1px solid rgba(172, 207, 232, 0.14);
+  background:
+    radial-gradient(circle at center, rgba(127, 216, 255, 0.1), rgba(11, 18, 28, 0.22) 44%, rgba(6, 10, 16, 0.4) 72%),
+    linear-gradient(180deg, rgba(10, 16, 25, 0.36), rgba(6, 10, 16, 0.3));
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(8px);
+}
+
+.touch-joystick-plate::before,
+.touch-joystick-plate::after {
+  content: "";
+  position: absolute;
+  inset: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.touch-joystick-plate::before {
+  width: 88px;
+  height: 88px;
+  border: 1px solid rgba(177, 217, 240, 0.08);
+}
+
+.touch-joystick-plate::after {
+  width: 18px;
+  height: 18px;
+  background: rgba(179, 224, 248, 0.08);
+  box-shadow: 0 0 0 1px rgba(179, 224, 248, 0.05);
+}
+
+.touch-joystick-plate[data-active="true"] {
+  border-color: rgba(137, 238, 255, 0.2);
+}
+
+.touch-joystick-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.14), rgba(107, 226, 255, 0.08) 32%, rgba(18, 28, 42, 0.5) 78%),
+    linear-gradient(180deg, rgba(24, 36, 52, 0.46), rgba(11, 17, 25, 0.42));
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  transform: translate(-50%, -50%);
+  transition: transform 60ms linear, border-color 120ms ease;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.touch-joystick-plate[data-active="true"] .touch-joystick-thumb {
+  border-color: rgba(169, 244, 255, 0.2);
+}
+
+.touch-actions {
+  --touch-action-column-width: 92px;
+  align-content: end;
+  justify-items: stretch;
+  align-items: end;
+  grid-template-columns: repeat(2, var(--touch-action-column-width));
+  grid-template-areas:
+    "speed interact";
+  column-gap: 12px;
+  row-gap: 0;
+}
+
+.touch-button {
+  width: 100%;
+  min-width: 70px;
+  min-height: 62px;
+  padding: 10px 14px;
+  border: 1px solid rgba(152, 189, 220, 0.22);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(13, 20, 31, 0.62), rgba(8, 13, 20, 0.52)),
+    radial-gradient(circle at top, rgba(117, 230, 255, 0.12), transparent 62%);
+  color: #eef4fb;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  backdrop-filter: blur(14px);
+}
+
+.touch-button[data-active="true"] {
+  transform: translateY(1px) scale(0.98);
+  border-color: rgba(137, 238, 255, 0.44);
+}
+
+.touch-button-speed {
+  grid-area: speed;
+}
+
+.touch-button-primary {
+  grid-area: interact;
+  justify-self: stretch;
+  width: 100%;
+  min-width: 92px;
+  min-height: 72px;
+  background:
+    linear-gradient(135deg, rgba(82, 215, 255, 0.72), rgba(111, 240, 192, 0.68)),
+    linear-gradient(180deg, rgba(20, 31, 44, 0.12), rgba(8, 13, 20, 0.12));
+  color: #081018;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.touch-button-primary:disabled,
+.touch-button-primary[data-available="false"] {
+  background:
+    linear-gradient(180deg, rgba(72, 83, 98, 0.52), rgba(38, 45, 58, 0.5)),
+    linear-gradient(180deg, rgba(20, 31, 44, 0.08), rgba(8, 13, 20, 0.08));
+  color: rgba(221, 229, 239, 0.72);
+  border-color: rgba(182, 197, 215, 0.14);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.touch-button-secondary {
+  background:
+    linear-gradient(180deg, rgba(36, 42, 57, 0.62), rgba(18, 22, 33, 0.56)),
+    radial-gradient(circle at top, rgba(253, 209, 125, 0.14), transparent 64%);
+  color: #ffe2b2;
 }
 
 .hud-panel {
@@ -361,6 +593,51 @@ select {
 
 .modal.hidden {
   display: none;
+}
+
+.clue-toast {
+  position: absolute;
+  top: 72px;
+  left: 18px;
+  z-index: 3;
+  width: min(360px, calc(100% - 36px));
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(10, 15, 24, 0.92), rgba(14, 21, 31, 0.94)),
+    radial-gradient(circle at top right, rgba(107, 226, 255, 0.14), transparent 42%);
+  border: 1px solid rgba(107, 226, 255, 0.22);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.clue-toast.hidden {
+  display: none;
+}
+
+.clue-toast-title {
+  margin: 0;
+  font-size: clamp(18px, 2.2vw, 22px);
+  line-height: 1.25;
+  color: #f4f8ff;
+}
+
+.clue-toast-body {
+  display: grid;
+  gap: 6px;
+  max-width: 32ch;
+  color: #d1dcea;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.clue-toast-body p {
+  margin: 0;
 }
 
 .modal-title {
@@ -587,6 +864,17 @@ select {
     padding: 14px;
   }
 
+  .game-root[data-touch-controls="true"] .game-overlay-bottom {
+    margin-bottom: 104px;
+  }
+
+  .game-root[data-touch-controls="true"] .game-overlay-actions-right {
+    top: 14px;
+    right: 14px;
+    gap: 8px;
+    max-width: min(42vw, 168px);
+  }
+
   .game-overlay-top {
     justify-content: stretch;
   }
@@ -615,5 +903,54 @@ select {
   .modal.phone-modal {
     inset: 20px;
     width: auto;
+  }
+
+  .clue-toast {
+    top: 88px;
+    left: 14px;
+    width: min(320px, calc(100% - 28px));
+    padding: 12px 14px;
+    border-radius: 18px;
+  }
+
+  .touch-controls {
+    padding: 12px 14px 14px;
+  }
+
+  .touch-joystick-zone {
+    width: min(48vw, 270px);
+    height: min(30vh, 200px);
+  }
+
+  .touch-joystick-plate {
+    width: 112px;
+    height: 112px;
+  }
+
+  .touch-joystick-thumb {
+    width: 42px;
+    height: 42px;
+  }
+
+  .touch-cluster {
+    gap: 8px;
+  }
+
+  .touch-actions {
+    --touch-action-column-width: 84px;
+    column-gap: 10px;
+    row-gap: 0;
+  }
+
+  .touch-button {
+    min-width: 58px;
+    min-height: 54px;
+    border-radius: 18px;
+    font-size: 14px;
+  }
+
+  .touch-button-primary {
+    min-width: 84px;
+    min-height: 62px;
   }
 }
