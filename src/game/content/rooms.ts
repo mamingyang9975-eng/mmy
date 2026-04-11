@@ -756,6 +756,19 @@ export const ROOMS: RoomDefinition[] = [
         ],
         style: "ledger",
       },
+      {
+        id: "patrol-design-log",
+        rect: { x: 454, y: 42, width: 20, height: 12 },
+        label: "巡逻设计日志",
+        title: "巡逻识别 / 设计日志",
+        body: [
+          "巡逻机会持续记录对象的行动路线、停留方式和动作节奏，并在后台生成一份身份倾向。",
+          "这份倾向不会直接显示给现场对象，但会被同步到云端判定节点，供门禁和交接系统读取。",
+          "引导路线默认只存在于后台评估里。维护模式下可临时把它映射成可见灯带，方便测试识别偏差。",
+        ],
+        style: "ledger",
+        unlocksGuideInsight: true,
+      },
     ],
     signalZones: [],
     waitingZones: [

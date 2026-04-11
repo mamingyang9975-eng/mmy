@@ -19,6 +19,11 @@ export class BootScene extends Phaser.Scene {
     super("boot");
   }
 
+  preload(): void {
+    this.load.image("facility-tileset", "/tilesets/tileset_for_free.png");
+    this.load.json("facility-example-map-data", "/maps/free_scifi_tileset_example.json");
+  }
+
   create(): void {
     const g = this.add.graphics();
 

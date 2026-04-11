@@ -56,3 +56,28 @@
 4:44:08 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
 4:44:23 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
 4:45:44 AM [vite] (client) page reload src/game/simulation/session.ts
+6:03:52 AM [vite] vite.config.ts changed, restarting server...
+✘ [ERROR] Expected ";" but found "，"
+
+    vite.config.ts:16:18:
+      16 │ 我重新放一次，你看一下
+         │       ~
+         ╵       ;
+
+failed to load config from /home/mamingyang9975/mmy/vite.config.ts
+6:03:52 AM [vite] Build failed with 1 error:
+vite.config.ts:16:18: ERROR: Expected ";" but found "，"
+6:03:52 AM [vite] server restart failed
+6:03:55 AM [vite] vite.config.ts changed, restarting server...
+6:03:55 AM [vite] (client) Re-optimizing dependencies because lockfile has changed
+6:03:55 AM [vite] server restarted.
+6:52:52 AM [vite] (client) page reload src/phaser/scenes/BootScene.ts
+6:53:01 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+6:53:40 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+8:30:08 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+8:30:26 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+8:31:08 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+10:45:31 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+10:56:08 AM [vite] (client) page reload src/game/content/rooms.ts
+10:57:01 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts
+10:57:05 AM [vite] (client) page reload src/phaser/scenes/GameScene.ts

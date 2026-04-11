@@ -76,6 +76,9 @@ const PRELUDE_BUS_SETTLE_MS = 560;
 const PRELUDE_PLAYER_ALIGHT_MS = 1280;
 const FACILITY_SCENE_TEXTURE_PREFIX = "facility-scene-";
 const FACILITY_SCENE_TEXTURE_SCALE = 3;
+const FACILITY_TILESET_TEXTURE_KEY = "facility-tileset";
+const FACILITY_TILEMAP_DATA_KEY = "facility-example-map-data";
+const FACILITY_TILE_SIZE = 32;
 const PRELUDE_GATE_ENTRY_ZONE: Rect = {
   x: PRELUDE_GATE_BLOCKER_RECT.x + PRELUDE_GATE_BLOCKER_RECT.width - 8,
   y: PRELUDE_GATE_BLOCKER_RECT.y - 10,
@@ -234,6 +237,42 @@ type FacilityScenePalette = {
   utility: number;
 };
 
+interface FacilityTileLayerData {
+  data: number[];
+  height: number;
+  name: string;
+  opacity?: number;
+  type: string;
+  visible?: boolean;
+  width: number;
+}
+
+interface FacilityTilemapData {
+  height: number;
+  layers: FacilityTileLayerData[];
+  tileheight: number;
+  tilesets: Array<{
+    columns: number;
+    firstgid: number;
+    imageheight: number;
+    imagewidth: number;
+    tilecount: number;
+    tileheight: number;
+    tilewidth: number;
+  }>;
+  tilewidth: number;
+  width: number;
+}
+
+interface SnappedTileBounds {
+  endCol: number;
+  endRow: number;
+  heightTiles: number;
+  startCol: number;
+  startRow: number;
+  widthTiles: number;
+}
+
 const PLAYER_COLORS = {
   skin: 0xd4b18c,
   hair: 0x1a212c,
@@ -294,6 +333,7 @@ export class GameScene extends Phaser.Scene {
   private indicateChargeMs = 0;
   private indicateZoneId: string | null = null;
   private activeClueId: string | null = null;
+  private guideInsightUnlocked = false;
   private completionShown = false;
 
   constructor() {
@@ -509,6 +549,7 @@ export class GameScene extends Phaser.Scene {
     this.phase = "prelude";
     this.preludeActive = false;
     this.completionShown = false;
+    this.guideInsightUnlocked = false;
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.loadPrelude();
@@ -1272,12 +1313,320 @@ export class GameScene extends Phaser.Scene {
     const ctx = texture.context;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = false;
     ctx.scale(FACILITY_SCENE_TEXTURE_SCALE, FACILITY_SCENE_TEXTURE_SCALE);
     this.drawFacilitySceneTexture(ctx, room, dimensions.width, dimensions.height);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     texture.refresh();
     return key;
+  }
+
+  private useFacilityTileArtwork(): boolean {
+    return (
+      this.textures.exists(FACILITY_TILESET_TEXTURE_KEY) &&
+      this.cache.json.has(FACILITY_TILEMAP_DATA_KEY)
+    );
+  }
+
+  private drawFacilitySceneTextureFromTiles(
+    ctx: CanvasRenderingContext2D,
+    room: RoomDefinition,
+    width: number,
+    height: number,
+  ): boolean {
+    const mapData = this.cache.json.get(FACILITY_TILEMAP_DATA_KEY) as
+      | FacilityTilemapData
+      | undefined;
+    if (!mapData || mapData.tilesets.length === 0) {
+      return false;
+    }
+
+    const tilesetTexture = this.textures.get(FACILITY_TILESET_TEXTURE_KEY);
+    if (!tilesetTexture) {
+      return false;
+    }
+
+    const source = tilesetTexture.getSourceImage() as CanvasImageSource | undefined;
+    if (!source) {
+      return false;
+    }
+
+    const tileset = mapData.tilesets[0];
+    const roomCols = Math.max(1, Math.ceil(width / FACILITY_TILE_SIZE));
+    const roomRows = Math.max(1, Math.ceil(height / FACILITY_TILE_SIZE));
+    const viewport = this.getFacilityTileViewport(room.id, roomCols, roomRows, mapData);
+
+    ctx.fillStyle = "#0b1118";
+    ctx.fillRect(0, 0, width, height);
+
+    for (const layerName of ["floor", "shadows", "walls", "objects"] as const) {
+      const layer = mapData.layers.find(
+        (entry) => entry.type === "tilelayer" && entry.name === layerName,
+      );
+      if (!layer || layer.visible === false) {
+        continue;
+      }
+
+      ctx.save();
+      ctx.globalAlpha = layer.opacity ?? 1;
+
+      for (let row = 0; row < roomRows; row += 1) {
+        for (let col = 0; col < roomCols; col += 1) {
+          const sourceCol = viewport.startCol + col;
+          const sourceRow = viewport.startRow + row;
+          if (sourceCol >= layer.width || sourceRow >= layer.height) {
+            continue;
+          }
+
+          const gid = layer.data[sourceRow * layer.width + sourceCol] ?? 0;
+          if (gid <= 0) {
+            continue;
+          }
+
+          this.drawFacilityTile(
+            ctx,
+            source,
+            gid,
+            tileset,
+            col * FACILITY_TILE_SIZE,
+            row * FACILITY_TILE_SIZE,
+          );
+        }
+      }
+
+      ctx.restore();
+    }
+
+    this.drawFacilityTileAccents(ctx, room, width, height, source, tileset);
+    return true;
+  }
+
+  private getFacilityTileViewport(
+    roomId: string,
+    roomCols: number,
+    roomRows: number,
+    mapData: FacilityTilemapData,
+  ): { startCol: number; startRow: number } {
+    const maxCol = Math.max(0, mapData.width - roomCols);
+    const maxRow = Math.max(0, mapData.height - roomRows);
+    const seed = Array.from(roomId).reduce(
+      (value, char) => value + char.charCodeAt(0),
+      0,
+    );
+
+    return {
+      startCol: maxCol === 0 ? 0 : seed % (maxCol + 1),
+      startRow: maxRow === 0 ? 0 : Math.floor(seed / 7) % (maxRow + 1),
+    };
+  }
+
+  private drawFacilityTile(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    gid: number,
+    tileset: FacilityTilemapData["tilesets"][number],
+    x: number,
+    y: number,
+  ): void {
+    const localId = gid - tileset.firstgid;
+    if (localId < 0 || localId >= tileset.tilecount) {
+      return;
+    }
+
+    const sx = (localId % tileset.columns) * tileset.tilewidth;
+    const sy = Math.floor(localId / tileset.columns) * tileset.tileheight;
+
+    ctx.drawImage(
+      source,
+      sx,
+      sy,
+      tileset.tilewidth,
+      tileset.tileheight,
+      x,
+      y,
+      FACILITY_TILE_SIZE,
+      FACILITY_TILE_SIZE,
+    );
+  }
+
+  private getSnappedTileBounds(rect: Rect): SnappedTileBounds {
+    const startCol = Math.max(0, Math.floor(rect.x / FACILITY_TILE_SIZE));
+    const endCol = Math.max(startCol, Math.ceil((rect.x + rect.width) / FACILITY_TILE_SIZE) - 1);
+    const startRow = Math.max(0, Math.floor(rect.y / FACILITY_TILE_SIZE));
+    const endRow = Math.max(startRow, Math.ceil((rect.y + rect.height) / FACILITY_TILE_SIZE) - 1);
+
+    return {
+      startCol,
+      endCol,
+      startRow,
+      endRow,
+      widthTiles: endCol - startCol + 1,
+      heightTiles: endRow - startRow + 1,
+    };
+  }
+
+  private paintFacilityFeatureRect(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    tileset: FacilityTilemapData["tilesets"][number],
+    rect: Rect,
+    options: {
+      centerGid: number;
+      horizontalLeftGid?: number;
+      horizontalMidGid?: number;
+      horizontalRightGid?: number;
+      singleColumnBottomGid?: number;
+      singleColumnMidGid?: number;
+      singleColumnTopGid?: number;
+      topLeftGid?: number;
+      topMidGid?: number;
+      topRightGid?: number;
+    },
+  ): void {
+    const bounds = this.getSnappedTileBounds(rect);
+
+    for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
+      for (let col = bounds.startCol; col <= bounds.endCol; col += 1) {
+        const localRow = row - bounds.startRow;
+        const localCol = col - bounds.startCol;
+        let gid = options.centerGid;
+
+        if (bounds.widthTiles === 1 && bounds.heightTiles === 1) {
+          gid = options.centerGid;
+        } else if (bounds.widthTiles === 1) {
+          if (localRow === 0) {
+            gid = options.singleColumnTopGid ?? options.centerGid;
+          } else if (localRow === bounds.heightTiles - 1) {
+            gid = options.singleColumnBottomGid ?? options.centerGid;
+          } else {
+            gid = options.singleColumnMidGid ?? options.centerGid;
+          }
+        } else if (bounds.heightTiles === 1) {
+          if (localCol === 0) {
+            gid = options.horizontalLeftGid ?? options.centerGid;
+          } else if (localCol === bounds.widthTiles - 1) {
+            gid = options.horizontalRightGid ?? options.centerGid;
+          } else {
+            gid = options.horizontalMidGid ?? options.centerGid;
+          }
+        } else if (localRow === 0 && localCol === 0) {
+          gid = options.topLeftGid ?? options.centerGid;
+        } else if (localRow === 0 && localCol === bounds.widthTiles - 1) {
+          gid = options.topRightGid ?? options.centerGid;
+        } else if (localRow === bounds.heightTiles - 1 && localCol === 0) {
+          gid = options.horizontalLeftGid ?? options.centerGid;
+        } else if (
+          localRow === bounds.heightTiles - 1 &&
+          localCol === bounds.widthTiles - 1
+        ) {
+          gid = options.horizontalRightGid ?? options.centerGid;
+        } else if (localRow === 0) {
+          gid = options.topMidGid ?? options.centerGid;
+        } else if (localCol === 0) {
+          gid = options.singleColumnMidGid ?? options.centerGid;
+        } else if (localCol === bounds.widthTiles - 1) {
+          gid = options.singleColumnMidGid ?? options.centerGid;
+        }
+
+        this.drawFacilityTile(
+          ctx,
+          source,
+          gid,
+          tileset,
+          col * FACILITY_TILE_SIZE,
+          row * FACILITY_TILE_SIZE,
+        );
+      }
+    }
+  }
+
+  private drawFacilityTileAccents(
+    ctx: CanvasRenderingContext2D,
+    room: RoomDefinition,
+    width: number,
+    height: number,
+    source: CanvasImageSource,
+    tileset: FacilityTilemapData["tilesets"][number],
+  ): void {
+    for (const rect of room.wallRects) {
+      this.paintFacilityFeatureRect(ctx, source, tileset, rect, {
+        centerGid: 1,
+        horizontalLeftGid: 28,
+        horizontalMidGid: 43,
+        horizontalRightGid: 26,
+        singleColumnTopGid: 16,
+        singleColumnMidGid: 24,
+        singleColumnBottomGid: 32,
+        topLeftGid: 28,
+        topMidGid: 43,
+        topRightGid: 26,
+      });
+    }
+
+    for (const door of room.doors) {
+      this.paintFacilityFeatureRect(ctx, source, tileset, door.rect, {
+        centerGid: 81,
+        horizontalLeftGid: 28,
+        horizontalMidGid: 43,
+        horizontalRightGid: 26,
+        singleColumnTopGid: 38,
+        singleColumnMidGid: 46,
+        singleColumnBottomGid: 46,
+        topLeftGid: 28,
+        topMidGid: 43,
+        topRightGid: 26,
+      });
+    }
+
+    if (room.terminal) {
+      this.paintFacilityFeatureRect(ctx, source, tileset, room.terminal.body, {
+        centerGid: 89,
+        horizontalLeftGid: 12,
+        horizontalMidGid: 89,
+        horizontalRightGid: 10,
+        singleColumnTopGid: 38,
+        singleColumnMidGid: 46,
+        singleColumnBottomGid: 46,
+        topLeftGid: 28,
+        topMidGid: 43,
+        topRightGid: 26,
+      });
+
+      for (const slot of room.terminal.slots) {
+        this.paintFacilityFeatureRect(ctx, source, tileset, slot.rect, {
+          centerGid:
+            slot.id === "fault-slot"
+              ? 81
+              : slot.id === "service-tray"
+                ? 37
+                : 3,
+        });
+      }
+    }
+
+    for (const consoleDef of room.consoles ?? []) {
+      this.paintFacilityFeatureRect(ctx, source, tileset, consoleDef.rect, {
+        centerGid: 37,
+      });
+    }
+
+    ctx.save();
+    for (const zone of room.signalZones) {
+      ctx.fillStyle = "rgba(70, 220, 200, 0.08)";
+      ctx.fillRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
+      ctx.strokeStyle = "rgba(120, 240, 220, 0.18)";
+      ctx.strokeRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
+    }
+
+    for (const zone of room.waitingZones ?? []) {
+      ctx.strokeStyle = "rgba(120, 190, 255, 0.18)";
+      ctx.strokeRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
+    }
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+    ctx.strokeRect(3, 3, width - 6, height - 6);
+    ctx.strokeRect(11, 11, width - 22, height - 22);
+    ctx.restore();
   }
 
   private drawFacilitySceneTexture(
@@ -1286,6 +1635,10 @@ export class GameScene extends Phaser.Scene {
     width: number,
     height: number,
   ): void {
+    if (this.drawFacilitySceneTextureFromTiles(ctx, room, width, height)) {
+      return;
+    }
+
     const palette = this.getFacilityScenePalette(room.id);
     const corridorY =
       room.doors.length > 0
@@ -2222,6 +2575,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createWallBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    if (this.useFacilityTileArtwork()) {
+      const shape = this.add.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        0x000000,
+        0.001,
+      );
+      shape.setDepth(6);
+      this.roomObjects.push(shape);
+      return shape;
+    }
+
     this.addShadowRect(rect, 5.5, 10, 8, 3, 0.42);
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -2280,6 +2647,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createDoorBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    if (this.useFacilityTileArtwork()) {
+      const shape = this.add.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        0x000000,
+        0.001,
+      );
+      shape.setDepth(7);
+      this.roomObjects.push(shape);
+      return shape;
+    }
+
     this.addShadowRect(rect, 6.55, 10, 10, 3, 0.45);
     const frame = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -2332,6 +2713,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTerminalBody(rect: Rect): Phaser.GameObjects.Rectangle {
+    if (this.useFacilityTileArtwork()) {
+      const body = this.add.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        0x000000,
+        0.001,
+      );
+      body.setDepth(5);
+      this.roomObjects.push(body);
+      return body;
+    }
+
     this.addShadowRect(rect, 4.7, 12, 10, 3, 0.4);
     const body = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -2391,6 +2786,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createSlotBlock(rect: Rect, accent: number): Phaser.GameObjects.Rectangle {
+    if (this.useFacilityTileArtwork()) {
+      const shape = this.add.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        accent,
+        0.001,
+      );
+      shape.setDepth(6);
+      this.roomObjects.push(shape);
+      return shape;
+    }
+
     this.addShadowRect(rect, 5.7, 6, 6, 2, 0.34);
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -2424,6 +2833,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createConsoleBlock(rect: Rect): Phaser.GameObjects.Rectangle {
+    if (this.useFacilityTileArtwork()) {
+      const shape = this.add.rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        0x000000,
+        0.001,
+      );
+      shape.setDepth(6);
+      this.roomObjects.push(shape);
+      return shape;
+    }
+
     this.addShadowRect(rect, 5.8, 8, 8, 2, 0.36);
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
@@ -3481,6 +3904,9 @@ export class GameScene extends Phaser.Scene {
       .sort((a, b) => a.distance - b.distance)[0];
 
     if (nearestClue) {
+      if (nearestClue.clue.def.unlocksGuideInsight) {
+        this.guideInsightUnlocked = true;
+      }
       this.activeClueId = nearestClue.clue.def.id;
       this.ui.showClue(
         nearestClue.clue.def.title,
@@ -3816,6 +4242,10 @@ export class GameScene extends Phaser.Scene {
 
   private syncGuidePaths(activePathId: string | null): void {
     this.guideGraphics.clear();
+    if (!this.guideInsightUnlocked) {
+      return;
+    }
+    const pulse = (Math.sin(this.time.now / 260) + 1) * 0.5;
 
     for (const path of this.currentRoom.guidePaths) {
       if (path.points.length < 2) {
@@ -3825,33 +4255,61 @@ export class GameScene extends Phaser.Scene {
       const isActive = path.id === activePathId;
       const color =
         path.color === "amber"
-          ? 0xf6c46b
-          : 0x72ddff;
-      const corridorWidth = (path.tolerance + GUIDE_PATH_EXTRA_TOLERANCE) * 2;
+          ? 0xc9a05b
+          : 0x7aa8bd;
 
-      this.guideGraphics.lineStyle(
-        corridorWidth,
-        color,
-        isActive ? 0.11 : 0.05,
-      );
-      this.guideGraphics.beginPath();
-      this.guideGraphics.moveTo(path.points[0].x, path.points[0].y);
-      for (let index = 1; index < path.points.length; index += 1) {
-        this.guideGraphics.lineTo(path.points[index].x, path.points[index].y);
+      for (let index = 0; index < path.points.length; index += 1) {
+        const point = path.points[index];
+        this.guideGraphics.fillStyle(0x05080c, isActive ? 0.18 : 0.1);
+        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 7 : 5);
+        this.guideGraphics.fillStyle(color, isActive ? 0.16 + pulse * 0.08 : 0.07);
+        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 4.5 : 3);
+        this.guideGraphics.fillStyle(0xffffff, isActive ? 0.22 + pulse * 0.08 : 0.08);
+        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 1.4 : 1);
       }
-      this.guideGraphics.strokePath();
 
-      this.guideGraphics.lineStyle(3, color, isActive ? 0.6 : 0.24);
-      this.guideGraphics.beginPath();
-      this.guideGraphics.moveTo(path.points[0].x, path.points[0].y);
       for (let index = 1; index < path.points.length; index += 1) {
-        this.guideGraphics.lineTo(path.points[index].x, path.points[index].y);
-      }
-      this.guideGraphics.strokePath();
+        const from = path.points[index - 1];
+        const to = path.points[index];
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const length = Math.hypot(dx, dy);
+        if (length <= 0.001) {
+          continue;
+        }
 
-      for (const point of path.points) {
-        this.guideGraphics.fillStyle(color, isActive ? 0.28 : 0.14);
-        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 4 : 3);
+        const nx = dx / length;
+        const ny = dy / length;
+        const spacing = 18;
+        const dashHalfLength = isActive ? 4.5 : 3.5;
+        const travelOffset = isActive ? (this.time.now / 22) % spacing : 0;
+
+        for (let dist = 10; dist < length - 6; dist += spacing) {
+          const shifted = isActive ? (dist + travelOffset) % length : dist;
+          const x = from.x + nx * shifted;
+          const y = from.y + ny * shifted;
+
+          this.guideGraphics.lineStyle(6, 0x061019, isActive ? 0.1 : 0.05);
+          this.guideGraphics.beginPath();
+          this.guideGraphics.moveTo(x - nx * (dashHalfLength + 1), y - ny * (dashHalfLength + 1));
+          this.guideGraphics.lineTo(x + nx * (dashHalfLength + 1), y + ny * (dashHalfLength + 1));
+          this.guideGraphics.strokePath();
+
+          this.guideGraphics.lineStyle(
+            isActive ? 2.5 : 2,
+            color,
+            isActive ? 0.28 + pulse * 0.18 : 0.12,
+          );
+          this.guideGraphics.beginPath();
+          this.guideGraphics.moveTo(x - nx * dashHalfLength, y - ny * dashHalfLength);
+          this.guideGraphics.lineTo(x + nx * dashHalfLength, y + ny * dashHalfLength);
+          this.guideGraphics.strokePath();
+
+          if (isActive) {
+            this.guideGraphics.fillStyle(color, 0.05 + pulse * 0.04);
+            this.guideGraphics.fillCircle(x, y, 3.5);
+          }
+        }
       }
     }
   }

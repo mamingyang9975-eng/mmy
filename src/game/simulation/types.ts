@@ -62,6 +62,7 @@ export interface ClueDefinition {
   title: string;
   body: string[];
   style: ClueStyle;
+  unlocksGuideInsight?: boolean;
 }
 
 export interface ResidentDefinition {
