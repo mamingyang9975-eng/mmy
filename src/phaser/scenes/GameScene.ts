@@ -13,7 +13,11 @@ import {
   hasReachedTarget,
   moveTowardTarget,
 } from "../../game/simulation/patrol";
-import { getSpeedLimit, NORMAL_SPEED_LIMIT } from "../../game/simulation/rules";
+import {
+  canTerminalSlotAcceptItem,
+  getSpeedLimit,
+  NORMAL_SPEED_LIMIT,
+} from "../../game/simulation/rules";
 import { GameSession } from "../../game/simulation/session";
 import type {
   ClueDefinition,
@@ -26,6 +30,7 @@ import type {
   ItemSlot,
   Rect,
   ResidentDefinition,
+  RoomFixtureDefinition,
   RoomDefinition,
   SessionSnapshot,
   StaffDefinition,
@@ -79,6 +84,7 @@ const FACILITY_SCENE_TEXTURE_SCALE = 3;
 const FACILITY_TILESET_TEXTURE_KEY = "facility-tileset";
 const FACILITY_TILEMAP_DATA_KEY = "facility-example-map-data";
 const FACILITY_TILE_SIZE = 32;
+const PROCEDURAL_FACILITY_BACKDROP_ROOMS = new Set<string>(["room-5"]);
 const PRELUDE_GATE_ENTRY_ZONE: Rect = {
   x: PRELUDE_GATE_BLOCKER_RECT.x + PRELUDE_GATE_BLOCKER_RECT.width - 8,
   y: PRELUDE_GATE_BLOCKER_RECT.y - 10,
@@ -210,6 +216,14 @@ interface RenderedWaitingZone {
   label: Phaser.GameObjects.Text;
 }
 
+interface RenderedForegroundOccluder {
+  rect: Rect;
+  activationBottom: number;
+  activationTop: number;
+  marginX: number;
+  object: Phaser.GameObjects.Graphics;
+}
+
 interface ScannerPatrolRuntime {
   lingerMs: number;
   segmentAngleRadians: number;
@@ -314,6 +328,7 @@ export class GameScene extends Phaser.Scene {
   private staffObjects = new Map<string, RenderedStaff>();
   private signalZoneObjects = new Map<string, RenderedSignalZone>();
   private waitingZoneObjects = new Map<string, RenderedWaitingZone>();
+  private foregroundOccluders: RenderedForegroundOccluder[] = [];
   private scannerPatrolStates = new Map<string, ScannerPatrolRuntime>();
   private roomRef = this.session.getSnapshot().runtime;
   private currentRoom = ROOMS[0];
@@ -333,7 +348,6 @@ export class GameScene extends Phaser.Scene {
   private indicateChargeMs = 0;
   private indicateZoneId: string | null = null;
   private activeClueId: string | null = null;
-  private guideInsightUnlocked = false;
   private completionShown = false;
 
   constructor() {
@@ -507,6 +521,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.syncItems();
     this.syncPlayerShadow(delta);
+    this.syncForegroundOccluders();
     this.processInteractions();
     this.processTriggers();
     const latestSnapshot = this.session.getSnapshot();
@@ -549,7 +564,6 @@ export class GameScene extends Phaser.Scene {
     this.phase = "prelude";
     this.preludeActive = false;
     this.completionShown = false;
-    this.guideInsightUnlocked = false;
     this.carriedItemId = null;
     this.indicateChargeMs = 0;
     this.loadPrelude();
@@ -1328,6 +1342,13 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private useRoomTileArtwork(room: RoomDefinition = this.currentRoom): boolean {
+    return (
+      this.useFacilityTileArtwork() &&
+      !PROCEDURAL_FACILITY_BACKDROP_ROOMS.has(room.id)
+    );
+  }
+
   private drawFacilitySceneTextureFromTiles(
     ctx: CanvasRenderingContext2D,
     room: RoomDefinition,
@@ -1548,6 +1569,8 @@ export class GameScene extends Phaser.Scene {
     source: CanvasImageSource,
     tileset: FacilityTilemapData["tilesets"][number],
   ): void {
+    const palette = this.getFacilityScenePalette(room.id);
+
     for (const rect of room.wallRects) {
       this.paintFacilityFeatureRect(ctx, source, tileset, rect, {
         centerGid: 1,
@@ -1593,14 +1616,12 @@ export class GameScene extends Phaser.Scene {
       });
 
       for (const slot of room.terminal.slots) {
-        this.paintFacilityFeatureRect(ctx, source, tileset, slot.rect, {
-          centerGid:
-            slot.id === "fault-slot"
-              ? 81
-              : slot.id === "service-tray"
-                ? 37
-                : 3,
-        });
+        this.drawFacilityTerminalSlotAccent(
+          ctx,
+          slot.rect,
+          this.getSlotAccent(slot.id),
+          this.canPlaceItemInSlot(room, slot, "battery"),
+        );
       }
     }
 
@@ -1610,17 +1631,27 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    this.drawFacilitySemanticBackdrop(ctx, room, palette, "tile");
+
     ctx.save();
     for (const zone of room.signalZones) {
-      ctx.fillStyle = "rgba(70, 220, 200, 0.08)";
-      ctx.fillRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
-      ctx.strokeStyle = "rgba(120, 240, 220, 0.18)";
-      ctx.strokeRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
+      this.drawFacilityZoneFloorMarker(
+        ctx,
+        zone.rect,
+        palette.utility,
+        "signal",
+        0.78,
+      );
     }
 
     for (const zone of room.waitingZones ?? []) {
-      ctx.strokeStyle = "rgba(120, 190, 255, 0.18)";
-      ctx.strokeRect(zone.rect.x, zone.rect.y, zone.rect.width, zone.rect.height);
+      this.drawFacilityZoneFloorMarker(
+        ctx,
+        zone.rect,
+        palette.accent,
+        "waiting",
+        0.7,
+      );
     }
 
     ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
@@ -1629,13 +1660,375 @@ export class GameScene extends Phaser.Scene {
     ctx.restore();
   }
 
+  private drawFacilitySemanticBackdrop(
+    ctx: CanvasRenderingContext2D,
+    room: RoomDefinition,
+    palette: FacilityScenePalette,
+    mode: "tile" | "procedural",
+  ): void {
+    const alphaScale = mode === "tile" ? 0.88 : 1;
+
+    this.drawFacilityGuideRoutes(ctx, room, palette, alphaScale);
+
+    for (const fixture of room.fixtures ?? []) {
+      this.drawFacilityFixtureBackdrop(ctx, fixture, palette, alphaScale);
+    }
+  }
+
+  private drawFacilityGuideRoutes(
+    ctx: CanvasRenderingContext2D,
+    room: RoomDefinition,
+    palette: FacilityScenePalette,
+    alphaScale: number,
+  ): void {
+    if (room.guidePaths.length === 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (const path of room.guidePaths) {
+      if (path.points.length < 2) {
+        continue;
+      }
+
+      const accent = path.color === "amber" ? palette.warm : palette.accent;
+      const haloAlpha = path.color === "amber" ? 0.11 : 0.1;
+
+      ctx.strokeStyle = this.colorToRgba(0x071019, 0.34 * alphaScale);
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(path.points[0].x, path.points[0].y);
+      for (let index = 1; index < path.points.length; index += 1) {
+        ctx.lineTo(path.points[index].x, path.points[index].y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = this.colorToRgba(accent, haloAlpha * alphaScale);
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(path.points[0].x, path.points[0].y);
+      for (let index = 1; index < path.points.length; index += 1) {
+        ctx.lineTo(path.points[index].x, path.points[index].y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = this.colorToRgba(accent, 0.24 * alphaScale);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(path.points[0].x, path.points[0].y);
+      for (let index = 1; index < path.points.length; index += 1) {
+        ctx.lineTo(path.points[index].x, path.points[index].y);
+      }
+      ctx.stroke();
+
+      for (let index = 1; index < path.points.length; index += 1) {
+        const from = path.points[index - 1];
+        const to = path.points[index];
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const length = Math.hypot(dx, dy);
+        if (length <= 0.001) {
+          continue;
+        }
+
+        const nx = dx / length;
+        const ny = dy / length;
+        for (let dist = 10; dist < length - 6; dist += 18) {
+          const x = from.x + nx * dist;
+          const y = from.y + ny * dist;
+
+          ctx.fillStyle = this.colorToRgba(accent, 0.2 * alphaScale);
+          ctx.beginPath();
+          ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      this.drawFacilityGuideEndpoint(
+        ctx,
+        path.points[0],
+        accent,
+        0.8 * alphaScale,
+      );
+      this.drawFacilityGuideEndpoint(
+        ctx,
+        path.points[path.points.length - 1],
+        accent,
+        alphaScale,
+      );
+    }
+
+    ctx.restore();
+  }
+
+  private drawFacilityGuideEndpoint(
+    ctx: CanvasRenderingContext2D,
+    point: { x: number; y: number },
+    accent: number,
+    alphaScale: number,
+  ): void {
+    ctx.fillStyle = this.colorToRgba(0x071019, 0.52 * alphaScale);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = this.colorToRgba(accent, 0.34 * alphaScale);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = this.colorToRgba(accent, 0.3 * alphaScale);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawFacilityFixtureBackdrop(
+    ctx: CanvasRenderingContext2D,
+    fixture: RoomFixtureDefinition,
+    palette: FacilityScenePalette,
+    alphaScale: number,
+  ): void {
+    const tonePalette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+
+    switch (fixture.kind) {
+      case "counter":
+      case "workbench":
+      case "deskPod": {
+        const bayX = rect.x - 10;
+        const bayY = rect.y - 10;
+        const bayWidth = rect.width + 20;
+        const bayHeight = rect.height + 18;
+        const bay = ctx.createLinearGradient(bayX, bayY, bayX, bayY + bayHeight);
+        bay.addColorStop(0, this.colorToRgba(palette.panel, 0.22 * alphaScale));
+        bay.addColorStop(1, this.colorToRgba(0x091018, 0.12 * alphaScale));
+        this.fillRoundedRectCanvas(
+          ctx,
+          bayX,
+          bayY,
+          bayWidth,
+          bayHeight,
+          8,
+          bay,
+        );
+        this.strokeRoundedRectCanvas(
+          ctx,
+          bayX,
+          bayY,
+          bayWidth,
+          bayHeight,
+          8,
+          this.colorToRgba(tonePalette.trim, 0.16 * alphaScale),
+          1,
+        );
+        ctx.fillStyle = this.colorToRgba(tonePalette.glow, 0.09 * alphaScale);
+        ctx.fillRect(
+          bayX + 8,
+          bayY + 7,
+          Math.max(10, bayWidth - 16),
+          2,
+        );
+        ctx.fillStyle = this.colorToRgba(tonePalette.accent, 0.08 * alphaScale);
+        ctx.fillRect(
+          rect.x + 8,
+          rect.y + rect.height + 4,
+          Math.max(10, rect.width - 16),
+          1,
+        );
+        break;
+      }
+      case "benchRow": {
+        const loungeX = rect.x - 8;
+        const loungeY = rect.y - 5;
+        const loungeWidth = rect.width + 16;
+        const loungeHeight = rect.height + 10;
+        this.fillRoundedRectCanvas(
+          ctx,
+          loungeX,
+          loungeY,
+          loungeWidth,
+          loungeHeight,
+          7,
+          this.colorToRgba(0x0b1219, 0.26 * alphaScale),
+        );
+        this.strokeRoundedRectCanvas(
+          ctx,
+          loungeX,
+          loungeY,
+          loungeWidth,
+          loungeHeight,
+          7,
+          this.colorToRgba(tonePalette.trim, 0.14 * alphaScale),
+          1,
+        );
+        const horizontal = rect.width >= rect.height;
+        const markerCount = Math.max(
+          2,
+          Math.floor((horizontal ? rect.width : rect.height) / 18),
+        );
+        for (let index = 0; index < markerCount; index += 1) {
+          const x = horizontal
+            ? rect.x + 8 + index * ((rect.width - 16) / Math.max(1, markerCount - 1))
+            : rect.x + rect.width / 2;
+          const y = horizontal
+            ? rect.y + rect.height / 2
+            : rect.y + 8 + index * ((rect.height - 16) / Math.max(1, markerCount - 1));
+          ctx.fillStyle = this.colorToRgba(tonePalette.accent, 0.14 * alphaScale);
+          ctx.beginPath();
+          ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case "storageRack":
+      case "fileShelf": {
+        const alcoveX = rect.x - 6;
+        const alcoveY = rect.y - 6;
+        const alcoveWidth = rect.width + 12;
+        const alcoveHeight = rect.height + 12;
+        const alcove = ctx.createLinearGradient(
+          alcoveX,
+          alcoveY,
+          alcoveX,
+          alcoveY + alcoveHeight,
+        );
+        alcove.addColorStop(0, this.colorToRgba(palette.panel, 0.2 * alphaScale));
+        alcove.addColorStop(1, this.colorToRgba(0x071018, 0.2 * alphaScale));
+        this.fillRoundedRectCanvas(
+          ctx,
+          alcoveX,
+          alcoveY,
+          alcoveWidth,
+          alcoveHeight,
+          6,
+          alcove,
+        );
+        this.strokeRoundedRectCanvas(
+          ctx,
+          alcoveX,
+          alcoveY,
+          alcoveWidth,
+          alcoveHeight,
+          6,
+          this.colorToRgba(tonePalette.trim, 0.14 * alphaScale),
+          1,
+        );
+        ctx.strokeStyle = this.colorToRgba(tonePalette.accent, 0.12 * alphaScale);
+        ctx.lineWidth = 1;
+        const shelfGap = rect.height >= rect.width ? 8 : 10;
+        for (let y = rect.y + 5; y < rect.y + rect.height - 3; y += shelfGap) {
+          ctx.beginPath();
+          ctx.moveTo(rect.x + 4, y);
+          ctx.lineTo(rect.x + rect.width - 4, y);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "divider": {
+        ctx.strokeStyle = this.colorToRgba(tonePalette.accent, 0.12 * alphaScale);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (rect.width >= rect.height) {
+          ctx.moveTo(rect.x, rect.y + rect.height / 2);
+          ctx.lineTo(rect.x + rect.width, rect.y + rect.height / 2);
+        } else {
+          ctx.moveTo(rect.x + rect.width / 2, rect.y);
+          ctx.lineTo(rect.x + rect.width / 2, rect.y + rect.height);
+        }
+        ctx.stroke();
+        break;
+      }
+      case "planter": {
+        this.fillRoundedRectCanvas(
+          ctx,
+          rect.x - 6,
+          rect.y - 4,
+          rect.width + 12,
+          rect.height + 8,
+          6,
+          this.colorToRgba(0x091219, 0.22 * alphaScale),
+        );
+        ctx.fillStyle = this.colorToRgba(tonePalette.plant ?? tonePalette.accent, 0.08 * alphaScale);
+        ctx.fillRect(
+          rect.x + 3,
+          rect.y + 2,
+          Math.max(8, rect.width - 6),
+          Math.max(4, rect.height - 4),
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  private drawFacilityZoneFloorMarker(
+    ctx: CanvasRenderingContext2D,
+    rect: Rect,
+    accent: number,
+    variant: "signal" | "waiting",
+    alphaScale: number,
+  ): void {
+    const padX = rect.x - 5;
+    const padY = rect.y - 5;
+    const padWidth = rect.width + 10;
+    const padHeight = rect.height + 10;
+
+    this.fillRoundedRectCanvas(
+      ctx,
+      padX,
+      padY,
+      padWidth,
+      padHeight,
+      6,
+      this.colorToRgba(accent, variant === "signal" ? 0.07 * alphaScale : 0.05 * alphaScale),
+    );
+    this.strokeRoundedRectCanvas(
+      ctx,
+      padX,
+      padY,
+      padWidth,
+      padHeight,
+      6,
+      this.colorToRgba(accent, variant === "signal" ? 0.22 * alphaScale : 0.18 * alphaScale),
+      1,
+    );
+
+    ctx.strokeStyle = this.colorToRgba(accent, 0.18 * alphaScale);
+    ctx.lineWidth = 1;
+    if (variant === "signal") {
+      for (let x = rect.x + 6; x <= rect.x + rect.width - 6; x += 8) {
+        ctx.beginPath();
+        ctx.moveTo(x, rect.y + 4);
+        ctx.lineTo(x, rect.y + rect.height - 4);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    for (let x = rect.x + 6; x <= rect.x + rect.width - 10; x += 10) {
+      ctx.beginPath();
+      ctx.moveTo(x, rect.y + rect.height / 2);
+      ctx.lineTo(x + 4, rect.y + rect.height / 2);
+      ctx.stroke();
+    }
+  }
+
   private drawFacilitySceneTexture(
     ctx: CanvasRenderingContext2D,
     room: RoomDefinition,
     width: number,
     height: number,
   ): void {
-    if (this.drawFacilitySceneTextureFromTiles(ctx, room, width, height)) {
+    if (
+      this.useRoomTileArtwork(room) &&
+      this.drawFacilitySceneTextureFromTiles(ctx, room, width, height)
+    ) {
       return;
     }
 
@@ -1831,6 +2224,9 @@ export class GameScene extends Phaser.Scene {
       ctx.stroke();
     }
 
+    this.drawRoomSpecificFacilityBackdrop(ctx, room, palette);
+    this.drawFacilitySemanticBackdrop(ctx, room, palette, "procedural");
+
     const vents = [
       { x: 26, y: height - 48, width: 42, height: 14 },
       { x: width - 84, y: 120, width: 42, height: 16 },
@@ -1947,23 +2343,13 @@ export class GameScene extends Phaser.Scene {
 
       for (const slot of room.terminal.slots) {
         const slotAccent =
-          slot.id === "fault-slot"
-            ? 0xef5d63
-            : slot.id === "service-tray"
-              ? palette.warm
-              : palette.accent;
-        this.strokeRoundedRectCanvas(
+          slot.id === "service-tray" ? palette.warm : this.getSlotAccent(slot.id);
+        this.drawFacilityTerminalSlotAccent(
           ctx,
-          slot.rect.x - 3,
-          slot.rect.y - 3,
-          slot.rect.width + 6,
-          slot.rect.height + 6,
-          4,
-          this.colorToRgba(slotAccent, 0.18),
-          1,
+          slot.rect,
+          slotAccent,
+          this.canPlaceItemInSlot(room, slot, "battery"),
         );
-        ctx.fillStyle = this.colorToRgba(slotAccent, 0.08);
-        ctx.fillRect(slot.rect.x + 2, slot.rect.y + slot.rect.height + 4, slot.rect.width - 4, 1);
       }
     }
 
@@ -2042,6 +2428,146 @@ export class GameScene extends Phaser.Scene {
         4,
         this.colorToRgba(0x101821, 0.32),
       );
+    }
+  }
+
+  private drawRoomSpecificFacilityBackdrop(
+    ctx: CanvasRenderingContext2D,
+    room: RoomDefinition,
+    palette: FacilityScenePalette,
+  ): void {
+    switch (room.id) {
+      case "room-5":
+        this.drawOfficeHandoverBackdrop(ctx, palette);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private drawOfficeHandoverBackdrop(
+    ctx: CanvasRenderingContext2D,
+    palette: FacilityScenePalette,
+  ): void {
+    const alcoves = [
+      { rect: { x: 206, y: 20, width: 86, height: 42 }, accent: palette.utility },
+      { rect: { x: 206, y: 152, width: 86, height: 46 }, accent: palette.warm },
+      { rect: { x: 478, y: 20, width: 132, height: 58 }, accent: palette.warm },
+      { rect: { x: 474, y: 138, width: 134, height: 56 }, accent: palette.utility },
+      { rect: { x: 378, y: 30, width: 60, height: 30 }, accent: palette.utility },
+    ] as const;
+
+    for (const alcove of alcoves) {
+      this.drawFacilityBackdropInset(ctx, alcove.rect, palette, alcove.accent);
+    }
+
+    this.drawFacilityBackdropWindow(
+      ctx,
+      { x: 490, y: 28, width: 108, height: 18 },
+      palette,
+      palette.accent,
+    );
+    this.drawFacilityBackdropWindow(
+      ctx,
+      { x: 486, y: 146, width: 90, height: 12 },
+      palette,
+      palette.utility,
+    );
+
+    ctx.fillStyle = this.colorToRgba(palette.warm, 0.08);
+    ctx.fillRect(386, 38, 40, 2);
+    ctx.fillStyle = this.colorToRgba(palette.accent, 0.08);
+    ctx.fillRect(506, 170, 78, 2);
+    ctx.strokeStyle = this.colorToRgba(palette.trim, 0.16);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(486, 168);
+    ctx.lineTo(604, 168);
+    ctx.stroke();
+  }
+
+  private drawFacilityBackdropInset(
+    ctx: CanvasRenderingContext2D,
+    rect: Rect,
+    palette: FacilityScenePalette,
+    accent: number,
+  ): void {
+    const frame = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height);
+    frame.addColorStop(0, this.colorToRgba(palette.panel, 0.3));
+    frame.addColorStop(1, this.colorToRgba(0x0b1016, 0.34));
+    this.fillRoundedRectCanvas(ctx, rect.x, rect.y, rect.width, rect.height, 9, frame);
+    this.strokeRoundedRectCanvas(
+      ctx,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      9,
+      this.colorToRgba(palette.trim, 0.18),
+      1,
+    );
+
+    const innerX = rect.x + 6;
+    const innerY = rect.y + 6;
+    const innerWidth = Math.max(12, rect.width - 12);
+    const innerHeight = Math.max(12, rect.height - 12);
+    const cavity = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerHeight);
+    cavity.addColorStop(0, this.colorToRgba(0x131c25, 0.78));
+    cavity.addColorStop(1, this.colorToRgba(0x060b12, 0.92));
+    this.fillRoundedRectCanvas(ctx, innerX, innerY, innerWidth, innerHeight, 7, cavity);
+    this.strokeRoundedRectCanvas(
+      ctx,
+      innerX,
+      innerY,
+      innerWidth,
+      innerHeight,
+      7,
+      this.colorToRgba(accent, 0.2),
+      1,
+    );
+    ctx.fillStyle = this.colorToRgba(accent, 0.08);
+    ctx.fillRect(innerX + 8, innerY + 7, Math.max(10, innerWidth - 16), 2);
+  }
+
+  private drawFacilityBackdropWindow(
+    ctx: CanvasRenderingContext2D,
+    rect: Rect,
+    palette: FacilityScenePalette,
+    accent: number,
+  ): void {
+    const frame = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height);
+    frame.addColorStop(0, this.colorToRgba(palette.panel, 0.34));
+    frame.addColorStop(1, this.colorToRgba(0x091018, 0.42));
+    this.fillRoundedRectCanvas(ctx, rect.x, rect.y, rect.width, rect.height, 6, frame);
+
+    const glassX = rect.x + 3;
+    const glassY = rect.y + 3;
+    const glassWidth = Math.max(10, rect.width - 6);
+    const glassHeight = Math.max(8, rect.height - 6);
+    const glass = ctx.createLinearGradient(glassX, glassY, glassX, glassY + glassHeight);
+    glass.addColorStop(0, this.colorToRgba(accent, 0.26));
+    glass.addColorStop(0.45, this.colorToRgba(0x1d3240, 0.34));
+    glass.addColorStop(1, this.colorToRgba(0x071018, 0.88));
+    this.fillRoundedRectCanvas(ctx, glassX, glassY, glassWidth, glassHeight, 5, glass);
+    this.strokeRoundedRectCanvas(
+      ctx,
+      glassX,
+      glassY,
+      glassWidth,
+      glassHeight,
+      5,
+      this.colorToRgba(accent, 0.3),
+      1,
+    );
+    ctx.fillStyle = this.colorToRgba(0xffffff, 0.09);
+    ctx.fillRect(glassX + 6, glassY + 3, Math.max(8, glassWidth - 12), 1);
+    ctx.strokeStyle = this.colorToRgba(accent, 0.16);
+    ctx.lineWidth = 1;
+    for (let x = glassX + 14; x < glassX + glassWidth - 6; x += 16) {
+      ctx.beginPath();
+      ctx.moveTo(x, glassY + 2);
+      ctx.lineTo(x, glassY + glassHeight - 2);
+      ctx.stroke();
     }
   }
 
@@ -2575,7 +3101,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createWallBlock(rect: Rect): Phaser.GameObjects.Rectangle {
-    if (this.useFacilityTileArtwork()) {
+    if (this.useRoomTileArtwork()) {
       const shape = this.add.rectangle(
         rect.x + rect.width / 2,
         rect.y + rect.height / 2,
@@ -2646,48 +3172,47 @@ export class GameScene extends Phaser.Scene {
     return shape;
   }
 
-  private createDoorBlock(rect: Rect): Phaser.GameObjects.Rectangle {
-    if (this.useFacilityTileArtwork()) {
-      const shape = this.add.rectangle(
-        rect.x + rect.width / 2,
-        rect.y + rect.height / 2,
-        rect.width,
-        rect.height,
-        0x000000,
-        0.001,
-      );
-      shape.setDepth(7);
-      this.roomObjects.push(shape);
-      return shape;
-    }
-
-    this.addShadowRect(rect, 6.55, 10, 10, 3, 0.45);
+  private createDoorBlock(
+    rect: Rect,
+    options?: {
+      passive?: boolean;
+    },
+  ): Phaser.GameObjects.Rectangle {
+    const passive = options?.passive ?? false;
+    const useTileArtwork = this.useRoomTileArtwork();
+    // Tile-backed rooms still need an explicit door overlay so narrow exits do not disappear into the wall art.
+    this.addShadowRect(rect, 6.55, 10, 10, 3, useTileArtwork ? 0.28 : 0.45);
     const frame = this.add.rectangle(
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
       rect.width + 6,
       rect.height + 6,
       0x1a212d,
-      0.9,
+      useTileArtwork ? 0.72 : 0.9,
     );
-    frame.setStrokeStyle(1, 0x304055, 0.95);
+    frame.setStrokeStyle(1, 0x304055, useTileArtwork ? 0.76 : 0.95);
     frame.setDepth(6.85);
     const shape = this.add.rectangle(
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
       rect.width,
       rect.height,
-      0x354251,
+      passive ? 0x2d3742 : useTileArtwork ? 0x2f3843 : 0x354251,
+      passive ? 0.78 : useTileArtwork ? 0.86 : 1,
     );
-    shape.setStrokeStyle(2, 0xefd36a, 0.5);
+    shape.setStrokeStyle(
+      2,
+      passive ? 0x9fb9cd : 0xefd36a,
+      passive ? 0.52 : useTileArtwork ? 0.68 : 0.5,
+    );
     shape.setDepth(7);
     const slit = this.add.rectangle(
       rect.x + rect.width / 2,
       rect.y + 8,
       Math.max(6, rect.width - 8),
       2,
-      0xefcf69,
-      0.28,
+      passive ? 0x9fc1d4 : 0xefcf69,
+      passive ? 0.26 : useTileArtwork ? 0.4 : 0.28,
     );
     slit.setDepth(7.1);
     const core = this.add.rectangle(
@@ -2695,25 +3220,80 @@ export class GameScene extends Phaser.Scene {
       rect.y + rect.height / 2,
       Math.max(4, rect.width - 8),
       Math.max(10, rect.height - 12),
-      0x24303e,
-      0.5,
+      passive ? 0x1d2631 : 0x24303e,
+      passive ? 0.3 : useTileArtwork ? 0.38 : 0.5,
     );
     core.setDepth(7.05);
     const accents = this.add.graphics();
     accents.setDepth(7.12);
-    accents.lineStyle(1, 0xefcf69, 0.18);
+    accents.lineStyle(
+      1,
+      passive ? 0x9fb9cd : 0xefcf69,
+      passive ? 0.22 : useTileArtwork ? 0.3 : 0.18,
+    );
     for (let y = rect.y + 7; y <= rect.y + rect.height - 7; y += 6) {
       accents.lineBetween(rect.x - 2, y, rect.x + 3, y + 2);
       accents.lineBetween(rect.x + rect.width - 3, y + 2, rect.x + rect.width + 2, y);
     }
-    accents.fillStyle(0xefcf69, 0.52);
+    accents.fillStyle(passive ? 0xb9d2e4 : 0xefcf69, passive ? 0.46 : useTileArtwork ? 0.72 : 0.52);
     accents.fillCircle(rect.x + rect.width - 4, rect.y + 6, 1.6);
     this.roomObjects.push(frame, shape, core, slit, accents);
     return shape;
   }
 
+  private createPassiveDoorway(rect: Rect): void {
+    this.createDoorBlock(rect, { passive: true });
+  }
+
+  private getPassiveDoorRects(room: RoomDefinition): Rect[] {
+    const candidates = new Map<string, Rect>();
+    const verticalWalls = room.wallRects.filter((rect) => rect.height > rect.width);
+
+    for (const top of verticalWalls) {
+      for (const bottom of verticalWalls) {
+        if (top === bottom || top.x !== bottom.x || top.width !== bottom.width) {
+          continue;
+        }
+
+        if (top.y >= bottom.y) {
+          continue;
+        }
+
+        const gapY = top.y + top.height;
+        const gapHeight = bottom.y - gapY;
+        if (gapHeight < 32 || gapHeight > 56) {
+          continue;
+        }
+
+        const rect = {
+          x: top.x,
+          y: gapY,
+          width: top.width,
+          height: gapHeight,
+        };
+        const overlapsDoor = room.doors.some((door) => this.rectsOverlap(door.rect, rect, 2));
+        if (overlapsDoor) {
+          continue;
+        }
+
+        candidates.set(`${rect.x}:${rect.y}:${rect.width}:${rect.height}`, rect);
+      }
+    }
+
+    return [...candidates.values()];
+  }
+
+  private rectsOverlap(a: Rect, b: Rect, padding = 0): boolean {
+    return !(
+      a.x + a.width <= b.x + padding ||
+      b.x + b.width <= a.x + padding ||
+      a.y + a.height <= b.y + padding ||
+      b.y + b.height <= a.y + padding
+    );
+  }
+
   private createTerminalBody(rect: Rect): Phaser.GameObjects.Rectangle {
-    if (this.useFacilityTileArtwork()) {
+    if (this.useRoomTileArtwork()) {
       const body = this.add.rectangle(
         rect.x + rect.width / 2,
         rect.y + rect.height / 2,
@@ -2786,7 +3366,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createSlotBlock(rect: Rect, accent: number): Phaser.GameObjects.Rectangle {
-    if (this.useFacilityTileArtwork()) {
+    if (this.useRoomTileArtwork()) {
       const shape = this.add.rectangle(
         rect.x + rect.width / 2,
         rect.y + rect.height / 2,
@@ -2833,7 +3413,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createConsoleBlock(rect: Rect): Phaser.GameObjects.Rectangle {
-    if (this.useFacilityTileArtwork()) {
+    if (this.useRoomTileArtwork()) {
       const shape = this.add.rectangle(
         rect.x + rect.width / 2,
         rect.y + rect.height / 2,
@@ -2883,32 +3463,124 @@ export class GameScene extends Phaser.Scene {
     return shape;
   }
 
+  private getSlotAccent(slotId: string): number {
+    if (slotId === "fault-slot") {
+      return 0xef5d63;
+    }
+    if (slotId === "service-tray") {
+      return 0xf1b562;
+    }
+    return 0x63d8ff;
+  }
+
+  private canPlaceItemInSlot(
+    room: RoomDefinition,
+    slot: ItemSlot,
+    itemType: "battery",
+  ): boolean {
+    if (!room.terminal) {
+      return false;
+    }
+
+    return canTerminalSlotAcceptItem(slot, room.terminal.recipes, itemType);
+  }
+
+  private drawFacilityTerminalSlotAccent(
+    ctx: CanvasRenderingContext2D,
+    rect: Rect,
+    accent: number,
+    isPlaceable: boolean,
+  ): void {
+    this.fillRoundedRectCanvas(
+      ctx,
+      rect.x - 2,
+      rect.y - 2,
+      rect.width + 4,
+      rect.height + 4,
+      5,
+      this.colorToRgba(accent, isPlaceable ? 0.18 : 0.1),
+    );
+    this.fillRoundedRectCanvas(
+      ctx,
+      rect.x + 1,
+      rect.y + 1,
+      Math.max(8, rect.width - 2),
+      Math.max(8, rect.height - 2),
+      4,
+      this.colorToRgba(0x081018, isPlaceable ? 0.72 : 0.84),
+    );
+    this.strokeRoundedRectCanvas(
+      ctx,
+      rect.x - 2,
+      rect.y - 2,
+      rect.width + 4,
+      rect.height + 4,
+      5,
+      this.colorToRgba(accent, isPlaceable ? 0.7 : 0.38),
+      1,
+    );
+
+    if (isPlaceable) {
+      this.fillRoundedRectCanvas(
+        ctx,
+        rect.x + 4,
+        rect.y + rect.height - 5,
+        Math.max(6, rect.width - 8),
+        3,
+        2,
+        this.colorToRgba(accent, 0.5),
+      );
+      return;
+    }
+
+    ctx.strokeStyle = this.colorToRgba(accent, 0.32);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(rect.x + 4, rect.y + 4);
+    ctx.lineTo(rect.x + rect.width - 4, rect.y + rect.height - 4);
+    ctx.moveTo(rect.x + rect.width - 4, rect.y + 4);
+    ctx.lineTo(rect.x + 4, rect.y + rect.height - 4);
+    ctx.stroke();
+  }
+
   private createResidentServicePoint(point: { x: number; y: number }): void {
-    const ring = this.add.circle(point.x, point.y, 12, 0xf1b562, 0.08);
-    ring.setStrokeStyle(1.5, 0xf1b562, 0.52);
-    ring.setDepth(3.2);
+    const mat = this.add.ellipse(point.x, point.y + 2, 28, 14, 0x15222c, 0.42);
+    mat.setStrokeStyle(1, 0x42576a, 0.4);
+    mat.setDepth(2.85);
+    const kioskBase = this.add.rectangle(point.x + 12, point.y - 6, 10, 18, 0x2a3644, 0.96);
+    kioskBase.setStrokeStyle(1.5, 0x70869d, 0.72);
+    kioskBase.setDepth(2.95);
+    const kioskHead = this.add.rectangle(point.x + 12, point.y - 14, 14, 7, 0x37495d, 0.96);
+    kioskHead.setStrokeStyle(1, 0xf1b562, 0.68);
+    kioskHead.setDepth(3);
+    const kioskLight = this.add.rectangle(point.x + 12, point.y - 14, 8, 2, 0xf1b562, 0.32);
+    kioskLight.setDepth(3.05);
+    const ring = this.add.circle(point.x, point.y, 10, 0xf1b562, 0.05);
+    ring.setStrokeStyle(1.25, 0xf1b562, 0.42);
+    ring.setDepth(3.1);
     const crosshair = this.add.graphics();
-    crosshair.setDepth(3.25);
-    crosshair.lineStyle(1, 0xf6d08e, 0.38);
-    crosshair.strokeCircle(point.x, point.y, 6);
-    crosshair.lineBetween(point.x - 8, point.y, point.x + 8, point.y);
-    crosshair.lineBetween(point.x, point.y - 8, point.x, point.y + 8);
-    this.roomObjects.push(ring, crosshair);
+    crosshair.setDepth(3.18);
+    crosshair.lineStyle(1, 0xf6d08e, 0.28);
+    crosshair.strokeCircle(point.x, point.y, 5);
+    crosshair.lineBetween(point.x - 7, point.y, point.x + 7, point.y);
+    crosshair.lineBetween(point.x, point.y - 7, point.x, point.y + 7);
+    this.roomObjects.push(mat, kioskBase, kioskHead, kioskLight, ring, crosshair);
   }
 
   private createWaitingZone(zone: WaitingZone): void {
+    this.createWaitingAreaFurniture(zone);
     const shape = this.add.rectangle(
       zone.rect.x + zone.rect.width / 2,
       zone.rect.y + zone.rect.height / 2,
       zone.rect.width,
       zone.rect.height,
-      0x1a3f4f,
-      0.16,
+      0x173543,
+      0.1,
     );
-    shape.setStrokeStyle(1.5, 0x6ecbe8, 0.6);
-    shape.setDepth(3);
+    shape.setStrokeStyle(1.25, 0x6ecbe8, 0.36);
+    shape.setDepth(3.05);
     const label = this.add.text(
-      zone.rect.x + 2,
+      zone.rect.x + 4,
       zone.rect.y + zone.rect.height + 4,
       zone.label,
       {
@@ -2922,6 +3594,762 @@ export class GameScene extends Phaser.Scene {
     this.decorateLabel(label);
     this.roomObjects.push(shape, label);
     this.waitingZoneObjects.set(zone.id, { zone, shape, label });
+  }
+
+  private createItemStagingPad(position: { x: number; y: number }): void {
+    const shadow = this.add.ellipse(position.x, position.y + 7, 20, 8, 0x04070b, 0.22);
+    shadow.setDepth(9.7);
+    const tray = this.add.rectangle(position.x, position.y + 6, 22, 8, 0x252f3c, 0.95);
+    tray.setStrokeStyle(1.25, 0x5f7388, 0.7);
+    tray.setDepth(9.85);
+    const lip = this.add.rectangle(position.x, position.y + 3, 18, 2, 0xf1b562, 0.16);
+    lip.setDepth(9.9);
+    this.roomObjects.push(shadow, tray, lip);
+  }
+
+  private createWaitingAreaFurniture(zone: WaitingZone): void {
+    const loungePad = this.add.rectangle(
+      zone.rect.x + zone.rect.width / 2,
+      zone.rect.y + zone.rect.height / 2,
+      zone.rect.width + 18,
+      zone.rect.height + 10,
+      0x0f1821,
+      0.32,
+    );
+    loungePad.setStrokeStyle(1, 0x32485c, 0.28);
+    loungePad.setDepth(2.72);
+    const seatCount = Math.max(2, Math.floor(zone.rect.width / 18));
+    const left = zone.rect.x + zone.rect.width / 2 - ((seatCount - 1) * 14) / 2;
+
+    for (let index = 0; index < seatCount; index += 1) {
+      const seatX = left + index * 14;
+      const back = this.add.rectangle(seatX, zone.rect.y + 6, 10, 4, 0x41566a, 0.94);
+      back.setStrokeStyle(1, 0x8da7bf, 0.45);
+      back.setDepth(2.82);
+      const seat = this.add.rectangle(seatX, zone.rect.y + 12, 10, 4, 0x5f768d, 0.92);
+      seat.setStrokeStyle(1, 0xc1d4e6, 0.24);
+      seat.setDepth(2.86);
+      const legs = this.add.graphics();
+      legs.setDepth(2.84);
+      legs.lineStyle(1, 0x22303d, 0.6);
+      legs.lineBetween(seatX - 3, zone.rect.y + 13, seatX - 2, zone.rect.y + 18);
+      legs.lineBetween(seatX + 3, zone.rect.y + 13, seatX + 2, zone.rect.y + 18);
+      this.roomObjects.push(back, seat, legs);
+    }
+
+    const sideTableX = zone.rect.x + zone.rect.width + 8;
+    const sideTable = this.add.rectangle(
+      sideTableX,
+      zone.rect.y + zone.rect.height / 2,
+      8,
+      12,
+      0x344454,
+      0.9,
+    );
+    sideTable.setStrokeStyle(1, 0x72889d, 0.4);
+    sideTable.setDepth(2.83);
+    const sideGlow = this.add.rectangle(
+      sideTableX,
+      zone.rect.y + zone.rect.height / 2 - 3,
+      4,
+      2,
+      0x73d4ff,
+      0.22,
+    );
+    sideGlow.setDepth(2.88);
+    this.roomObjects.push(loungePad, sideTable, sideGlow);
+  }
+
+  private getRoomFixturePalette(
+    tone: RoomFixtureDefinition["tone"] = "neutral",
+  ): {
+    body: number;
+    bodyAlt: number;
+    trim: number;
+    accent: number;
+    glow: number;
+    plant?: number;
+  } {
+    switch (tone) {
+      case "entry":
+        return {
+          body: 0x405466,
+          bodyAlt: 0x2d3d4e,
+          trim: 0xb7cbdc,
+          accent: 0x73d4ff,
+          glow: 0xf1b562,
+          plant: 0x6ca87d,
+        };
+      case "service":
+        return {
+          body: 0x4a4338,
+          bodyAlt: 0x312c24,
+          trim: 0xd7c99e,
+          accent: 0xf1b562,
+          glow: 0x73d4ff,
+          plant: 0x75976a,
+        };
+      case "archive":
+        return {
+          body: 0x33474d,
+          bodyAlt: 0x233137,
+          trim: 0xbddace,
+          accent: 0x7df2bc,
+          glow: 0x6be2ff,
+          plant: 0x6b9f82,
+        };
+      case "office":
+        return {
+          body: 0x3e4957,
+          bodyAlt: 0x2b3440,
+          trim: 0xd7e2eb,
+          accent: 0xc6f1ff,
+          glow: 0xf6d98b,
+          plant: 0x6d9874,
+        };
+      case "neutral":
+      default:
+        return {
+          body: 0x394554,
+          bodyAlt: 0x27313d,
+          trim: 0xb6c6d8,
+          accent: 0x73d4ff,
+          glow: 0xf1b562,
+          plant: 0x6f9b76,
+        };
+    }
+  }
+
+  private createRoomFixture(fixture: RoomFixtureDefinition): void {
+    switch (fixture.kind) {
+      case "counter":
+        this.createFixtureCounter(fixture);
+        break;
+      case "benchRow":
+        this.createFixtureBenchRow(fixture);
+        break;
+      case "storageRack":
+        this.createFixtureStorageRack(fixture);
+        break;
+      case "workbench":
+        this.createFixtureWorkbench(fixture);
+        break;
+      case "fileShelf":
+        this.createFixtureFileShelf(fixture);
+        break;
+      case "divider":
+        this.createFixtureDivider(fixture);
+        break;
+      case "deskPod":
+        this.createFixtureDeskPod(fixture);
+        break;
+      case "planter":
+        this.createFixturePlanter(fixture);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private createFixtureCollider(fixture: RoomFixtureDefinition): void {
+    const blockerRect = this.getFixtureBlockerRect(fixture);
+    if (!blockerRect) {
+      return;
+    }
+
+    const shape = this.add.rectangle(
+      blockerRect.x + blockerRect.width / 2,
+      blockerRect.y + blockerRect.height / 2,
+      blockerRect.width,
+      blockerRect.height,
+      0x000000,
+      0.001,
+    );
+    shape.setDepth(3.88);
+    this.roomObjects.push(shape);
+    this.physics.add.existing(shape, true);
+    const collider = this.physics.add.collider(this.player, shape);
+    this.wallBodies.push(shape);
+    this.wallColliders.push(collider);
+  }
+
+  private createFixtureOccluder(fixture: RoomFixtureDefinition): void {
+    const occluderRect = this.getFixtureOccluderRect(fixture);
+    if (!occluderRect) {
+      return;
+    }
+
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const overlay = this.add.graphics();
+    overlay.setDepth(20.6);
+    overlay.setVisible(false);
+
+    overlay.fillStyle(palette.bodyAlt, 0.98);
+    overlay.fillRect(
+      occluderRect.x,
+      occluderRect.y,
+      occluderRect.width,
+      occluderRect.height,
+    );
+    overlay.lineStyle(1, palette.trim, 0.34);
+    overlay.strokeRect(
+      occluderRect.x,
+      occluderRect.y,
+      occluderRect.width,
+      occluderRect.height,
+    );
+
+    if (
+      fixture.kind === "counter" ||
+      fixture.kind === "workbench" ||
+      fixture.kind === "deskPod"
+    ) {
+      overlay.fillStyle(palette.glow, 0.12);
+      overlay.fillRect(
+        occluderRect.x + 4,
+        occluderRect.y + 2,
+        Math.max(8, occluderRect.width - 8),
+        2,
+      );
+    } else if (
+      fixture.kind === "storageRack" ||
+      fixture.kind === "fileShelf"
+    ) {
+      overlay.lineStyle(1, palette.accent, 0.18);
+      for (
+        let y = occluderRect.y + 4;
+        y < occluderRect.y + occluderRect.height - 2;
+        y += 5
+      ) {
+        overlay.lineBetween(
+          occluderRect.x + 3,
+          y,
+          occluderRect.x + occluderRect.width - 3,
+          y,
+        );
+      }
+    } else if (fixture.kind === "planter") {
+      overlay.fillStyle(palette.plant ?? 0x6f9b76, 0.18);
+      overlay.fillRect(
+        occluderRect.x + 2,
+        occluderRect.y + 2,
+        Math.max(6, occluderRect.width - 4),
+        Math.max(4, occluderRect.height - 4),
+      );
+    }
+
+    this.roomObjects.push(overlay);
+    this.foregroundOccluders.push({
+      rect: fixture.rect,
+      activationBottom: fixture.rect.y + fixture.rect.height - 1,
+      activationTop: fixture.rect.y - Math.min(12, fixture.rect.height + 4),
+      marginX: Math.max(6, Math.floor(fixture.rect.width * 0.25)),
+      object: overlay,
+    });
+  }
+
+  private getFixtureBlockerRect(fixture: RoomFixtureDefinition): Rect | null {
+    const { rect } = fixture;
+    switch (fixture.kind) {
+      case "counter":
+        return {
+          x: rect.x + 2,
+          y: rect.y + 2,
+          width: Math.max(8, rect.width - 4),
+          height: Math.max(6, rect.height - 3),
+        };
+      case "benchRow":
+        if (rect.width >= rect.height) {
+          return {
+            x: rect.x + 4,
+            y: rect.y + rect.height / 2 - 3,
+            width: Math.max(10, rect.width - 8),
+            height: 6,
+          };
+        }
+        return {
+          x: rect.x + rect.width / 2 - 3,
+          y: rect.y + 4,
+          width: 6,
+          height: Math.max(10, rect.height - 8),
+        };
+      case "storageRack":
+      case "fileShelf":
+      case "workbench":
+      case "deskPod":
+      case "planter":
+        return {
+          x: rect.x + 1,
+          y: rect.y + 1,
+          width: Math.max(8, rect.width - 2),
+          height: Math.max(8, rect.height - 2),
+        };
+      case "divider":
+        return { ...rect };
+      default:
+        return null;
+    }
+  }
+
+  private getFixtureOccluderRect(fixture: RoomFixtureDefinition): Rect | null {
+    const { rect } = fixture;
+    switch (fixture.kind) {
+      case "counter":
+      case "workbench":
+      case "deskPod":
+        return {
+          x: rect.x + 1,
+          y: rect.y + Math.max(2, Math.floor(rect.height * 0.35)),
+          width: Math.max(8, rect.width - 2),
+          height: Math.max(5, Math.ceil(rect.height * 0.65)),
+        };
+      case "storageRack":
+      case "fileShelf":
+      case "planter":
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        };
+      default:
+        return null;
+    }
+  }
+
+  private createFixtureCounter(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    this.addShadowRect(rect, 4.05, 10, 8, 4, 0.22);
+    const body = this.add.rectangle(centerX, centerY, rect.width, rect.height, palette.body, 0.96);
+    body.setStrokeStyle(1.5, palette.trim, 0.56);
+    body.setDepth(4.2);
+    const panel = this.add.rectangle(
+      centerX,
+      rect.y + rect.height * 0.62,
+      Math.max(12, rect.width - 10),
+      Math.max(6, rect.height * 0.46),
+      palette.bodyAlt,
+      0.96,
+    );
+    panel.setStrokeStyle(1, palette.trim, 0.28);
+    panel.setDepth(4.24);
+    const topStrip = this.add.rectangle(
+      centerX,
+      rect.y + 3,
+      Math.max(14, rect.width - 6),
+      4,
+      palette.glow,
+      0.18,
+    );
+    topStrip.setDepth(4.28);
+    const terminal = this.add.rectangle(
+      rect.x + rect.width - 10,
+      rect.y - 4,
+      12,
+      8,
+      0x162531,
+      0.98,
+    );
+    terminal.setStrokeStyle(1, palette.accent, 0.7);
+    terminal.setDepth(4.34);
+    const terminalGlow = this.add.rectangle(
+      rect.x + rect.width - 10,
+      rect.y - 4,
+      8,
+      2,
+      palette.accent,
+      0.24,
+    );
+    terminalGlow.setDepth(4.36);
+    this.roomObjects.push(body, panel, topStrip, terminal, terminalGlow);
+  }
+
+  private createFixtureBenchRow(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const horizontal = rect.width >= rect.height;
+    const benchCount = Math.max(
+      2,
+      Math.floor((horizontal ? rect.width : rect.height) / 18),
+    );
+    const lane = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x111922,
+      0.28,
+    );
+    lane.setStrokeStyle(1, palette.trim, 0.22);
+    lane.setDepth(2.72);
+    this.roomObjects.push(lane);
+
+    for (let index = 0; index < benchCount; index += 1) {
+      const seatX = horizontal
+        ? rect.x + 10 + index * ((rect.width - 20) / Math.max(1, benchCount - 1))
+        : rect.x + rect.width / 2;
+      const seatY = horizontal
+        ? rect.y + rect.height / 2
+        : rect.y + 10 + index * ((rect.height - 20) / Math.max(1, benchCount - 1));
+      const back = this.add.rectangle(
+        seatX,
+        horizontal ? seatY - 4 : seatY,
+        horizontal ? 10 : 4,
+        horizontal ? 4 : 10,
+        palette.body,
+        0.94,
+      );
+      back.setStrokeStyle(1, palette.trim, 0.42);
+      back.setDepth(2.82);
+      const seat = this.add.rectangle(
+        seatX,
+        horizontal ? seatY + 2 : seatY,
+        horizontal ? 10 : 4,
+        horizontal ? 4 : 10,
+        palette.bodyAlt,
+        0.96,
+      );
+      seat.setStrokeStyle(1, palette.trim, 0.22);
+      seat.setDepth(2.86);
+      this.roomObjects.push(back, seat);
+    }
+  }
+
+  private createFixtureStorageRack(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const frame = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.bodyAlt,
+      0.96,
+    );
+    frame.setStrokeStyle(1.5, palette.trim, 0.46);
+    frame.setDepth(4.06);
+    const shelves = this.add.graphics();
+    shelves.setDepth(4.12);
+    shelves.lineStyle(1.5, palette.trim, 0.42);
+    const shelfCount = rect.height >= rect.width ? 3 : 2;
+    for (let index = 1; index <= shelfCount; index += 1) {
+      const y = rect.y + (rect.height / (shelfCount + 1)) * index;
+      shelves.lineBetween(rect.x + 4, y, rect.x + rect.width - 4, y);
+    }
+    const crateA = this.add.rectangle(rect.x + 10, rect.y + 6, 10, 6, palette.glow, 0.18);
+    crateA.setStrokeStyle(1, palette.glow, 0.34);
+    crateA.setDepth(4.16);
+    const crateB = this.add.rectangle(rect.x + rect.width - 12, rect.y + rect.height - 7, 12, 6, palette.accent, 0.16);
+    crateB.setStrokeStyle(1, palette.accent, 0.3);
+    crateB.setDepth(4.16);
+    this.roomObjects.push(frame, shelves, crateA, crateB);
+  }
+
+  private createFixtureWorkbench(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    this.addShadowRect(rect, 4.05, 8, 6, 3, 0.2);
+    const frame = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.body,
+      0.96,
+    );
+    frame.setStrokeStyle(1.25, palette.trim, 0.5);
+    frame.setDepth(4.14);
+    const top = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 3,
+      Math.max(12, rect.width - 6),
+      5,
+      palette.glow,
+      0.16,
+    );
+    top.setDepth(4.2);
+    const toolLines = this.add.graphics();
+    toolLines.setDepth(4.22);
+    toolLines.lineStyle(1.25, palette.accent, 0.36);
+    toolLines.lineBetween(rect.x + 8, rect.y + rect.height / 2, rect.x + rect.width - 8, rect.y + rect.height / 2);
+    toolLines.lineBetween(rect.x + 10, rect.y + rect.height / 2 + 4, rect.x + rect.width - 12, rect.y + rect.height / 2 + 2);
+    const drawer = this.add.rectangle(
+      rect.x + 12,
+      rect.y + rect.height - 4,
+      14,
+      5,
+      palette.bodyAlt,
+      0.98,
+    );
+    drawer.setStrokeStyle(1, palette.trim, 0.28);
+    drawer.setDepth(4.18);
+    this.roomObjects.push(frame, top, toolLines, drawer);
+  }
+
+  private createFixtureFileShelf(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const frame = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.bodyAlt,
+      0.96,
+    );
+    frame.setStrokeStyle(1.5, palette.trim, 0.44);
+    frame.setDepth(4.08);
+    const shelves = this.add.graphics();
+    shelves.setDepth(4.12);
+    shelves.lineStyle(1.25, palette.trim, 0.34);
+    const shelfCount = rect.height >= rect.width ? 4 : 2;
+    for (let index = 1; index <= shelfCount; index += 1) {
+      const y = rect.y + (rect.height / (shelfCount + 1)) * index;
+      shelves.lineBetween(rect.x + 4, y, rect.x + rect.width - 4, y);
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const folder = this.add.rectangle(
+        rect.x + 8 + index * 10,
+        rect.y + 6,
+        6,
+        Math.max(6, rect.height - 10),
+        index % 2 === 0 ? palette.accent : palette.glow,
+        0.14,
+      );
+      folder.setStrokeStyle(
+        1,
+        index % 2 === 0 ? palette.accent : palette.glow,
+        0.28,
+      );
+      folder.setDepth(4.16);
+      this.roomObjects.push(folder);
+    }
+    this.roomObjects.push(frame, shelves);
+  }
+
+  private createFixtureDivider(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const posts = this.add.graphics();
+    posts.setDepth(3.72);
+    posts.lineStyle(2, palette.trim, 0.52);
+    if (rect.width >= rect.height) {
+      posts.lineBetween(rect.x, rect.y + rect.height / 2, rect.x + rect.width, rect.y + rect.height / 2);
+      posts.lineBetween(rect.x + 4, rect.y + rect.height / 2 - 6, rect.x + 4, rect.y + rect.height / 2 + 6);
+      posts.lineBetween(rect.x + rect.width - 4, rect.y + rect.height / 2 - 6, rect.x + rect.width - 4, rect.y + rect.height / 2 + 6);
+    } else {
+      posts.lineBetween(rect.x + rect.width / 2, rect.y, rect.x + rect.width / 2, rect.y + rect.height);
+      posts.lineBetween(rect.x + rect.width / 2 - 6, rect.y + 4, rect.x + rect.width / 2 + 6, rect.y + 4);
+      posts.lineBetween(rect.x + rect.width / 2 - 6, rect.y + rect.height - 4, rect.x + rect.width / 2 + 6, rect.y + rect.height - 4);
+    }
+    const glass = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.accent,
+      0.06,
+    );
+    glass.setStrokeStyle(1, palette.accent, 0.18);
+    glass.setDepth(3.76);
+    this.roomObjects.push(posts, glass);
+  }
+
+  private createFixtureDeskPod(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    this.addShadowRect(rect, 4.02, 6, 6, 3, 0.18);
+    const desk = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.body,
+      0.96,
+    );
+    desk.setStrokeStyle(1.25, palette.trim, 0.5);
+    desk.setDepth(4.12);
+    const top = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 3,
+      Math.max(12, rect.width - 6),
+      4,
+      palette.glow,
+      0.14,
+    );
+    top.setDepth(4.18);
+    const screen = this.add.rectangle(
+      rect.x + rect.width - 12,
+      rect.y - 4,
+      12,
+      8,
+      0x16232e,
+      0.98,
+    );
+    screen.setStrokeStyle(1, palette.accent, 0.62);
+    screen.setDepth(4.24);
+    const chair = this.add.ellipse(
+      rect.x + 10,
+      rect.y + rect.height + 5,
+      14,
+      6,
+      palette.bodyAlt,
+      0.82,
+    );
+    chair.setStrokeStyle(1, palette.trim, 0.26);
+    chair.setDepth(3.98);
+    this.roomObjects.push(desk, top, screen, chair);
+  }
+
+  private createFixturePlanter(fixture: RoomFixtureDefinition): void {
+    const palette = this.getRoomFixturePalette(fixture.tone);
+    const { rect } = fixture;
+    const bed = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      palette.bodyAlt,
+      0.96,
+    );
+    bed.setStrokeStyle(1.25, palette.trim, 0.44);
+    bed.setDepth(3.92);
+    const soil = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + 3,
+      Math.max(8, rect.width - 6),
+      Math.max(3, rect.height - 8),
+      0x1c261d,
+      0.68,
+    );
+    soil.setDepth(3.96);
+    const leaves = this.add.graphics();
+    leaves.setDepth(4.02);
+    leaves.fillStyle(palette.plant ?? 0x6f9b76, 0.88);
+    const leafCount = Math.max(3, Math.floor(rect.width / 16));
+    for (let index = 0; index < leafCount; index += 1) {
+      const x = rect.x + 8 + index * ((rect.width - 16) / Math.max(1, leafCount - 1));
+      leaves.fillCircle(x, rect.y + rect.height / 2, 3);
+      leaves.fillCircle(x - 2, rect.y + rect.height / 2 - 3, 2.2);
+    }
+    this.roomObjects.push(bed, soil, leaves);
+  }
+
+  private createStaffStation(staff: StaffDefinition): void {
+    switch (staff.role) {
+      case "receptionist":
+        this.createReceptionDesk(staff);
+        break;
+      case "porter":
+        this.createPorterStagingCart(staff);
+        break;
+      case "archivist":
+        this.createOfficeDesk(staff, 0x7df2bc, 0x6be2ff);
+        break;
+      case "clerk":
+        this.createOfficeDesk(staff, 0xf6d98b, 0xc6f1ff);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private createReceptionDesk(staff: StaffDefinition): void {
+    const baseX = staff.deskPoint.x;
+    const baseY = staff.deskPoint.y + 8;
+    const shadow = this.add.ellipse(baseX, baseY + 7, 52, 10, 0x04070b, 0.28);
+    shadow.setDepth(8.7);
+    const rearDesk = this.add.rectangle(baseX, baseY - 4, 50, 10, 0x2d3947, 0.96);
+    rearDesk.setStrokeStyle(1.5, 0x71869a, 0.72);
+    rearDesk.setDepth(8.85);
+    const worktop = this.add.rectangle(baseX, baseY - 9, 56, 5, 0x52667b, 0.96);
+    worktop.setStrokeStyle(1, 0xd0deec, 0.28);
+    worktop.setDepth(8.92);
+    const screenStem = this.add.rectangle(baseX + 12, baseY - 16, 3, 6, 0x2f3b49, 0.94);
+    screenStem.setDepth(8.98);
+    const screen = this.add.rectangle(baseX + 12, baseY - 20, 12, 8, 0x182531, 0.98);
+    screen.setStrokeStyle(1, 0x73d4ff, 0.65);
+    screen.setDepth(9.02);
+    const screenGlow = this.add.rectangle(baseX + 12, baseY - 20, 8, 2, 0x73d4ff, 0.24);
+    screenGlow.setDepth(9.05);
+    const deskFront = this.add.rectangle(baseX, baseY + 1, 58, 12, 0x435263, 0.98);
+    deskFront.setStrokeStyle(1.5, 0x9db5c8, 0.46);
+    deskFront.setDepth(11.02);
+    const deskStrip = this.add.rectangle(baseX, baseY - 2, 48, 2, 0xf1b562, 0.16);
+    deskStrip.setDepth(11.04);
+    this.roomObjects.push(
+      shadow,
+      rearDesk,
+      worktop,
+      screenStem,
+      screen,
+      screenGlow,
+      deskFront,
+      deskStrip,
+    );
+  }
+
+  private createOfficeDesk(
+    staff: StaffDefinition,
+    paperAccent: number,
+    screenAccent: number,
+  ): void {
+    const baseX = staff.deskPoint.x;
+    const baseY = staff.deskPoint.y + 7;
+    const shadow = this.add.ellipse(baseX, baseY + 6, 40, 9, 0x04070b, 0.24);
+    shadow.setDepth(8.7);
+    const desk = this.add.rectangle(baseX, baseY, 42, 14, 0x2c3947, 0.96);
+    desk.setStrokeStyle(1.25, 0x71859a, 0.62);
+    desk.setDepth(8.84);
+    const deskTop = this.add.rectangle(baseX, baseY - 7, 46, 4, 0x55697e, 0.96);
+    deskTop.setDepth(8.9);
+    const screen = this.add.rectangle(baseX + 10, baseY - 15, 12, 8, 0x16232e, 0.98);
+    screen.setStrokeStyle(1, screenAccent, 0.62);
+    screen.setDepth(8.98);
+    const file = this.add.rectangle(baseX - 8, baseY - 11, 10, 6, paperAccent, 0.28);
+    file.setStrokeStyle(1, paperAccent, 0.48);
+    file.setDepth(8.95);
+    const front = this.add.rectangle(baseX, baseY + 4, 46, 10, 0x415161, 0.98);
+    front.setStrokeStyle(1.25, 0x91a8bc, 0.38);
+    front.setDepth(11.01);
+    this.roomObjects.push(shadow, desk, deskTop, screen, file, front);
+  }
+
+  private createPorterStagingCart(staff: StaffDefinition): void {
+    const cartX = staff.deskPoint.x + 10;
+    const cartY = staff.deskPoint.y + 2;
+    const shadow = this.add.ellipse(cartX, cartY + 8, 26, 8, 0x04070b, 0.22);
+    shadow.setDepth(8.7);
+    const cartBody = this.add.rectangle(cartX, cartY, 24, 10, 0x3a4655, 0.96);
+    cartBody.setStrokeStyle(1.25, 0xaabbd0, 0.36);
+    cartBody.setDepth(8.82);
+    const handle = this.add.graphics();
+    handle.setDepth(8.88);
+    handle.lineStyle(1.5, 0x8ea5bb, 0.64);
+    handle.lineBetween(cartX - 10, cartY - 6, cartX - 10, cartY + 5);
+    handle.lineBetween(cartX - 10, cartY - 6, cartX - 3, cartY - 6);
+    const crateA = this.add.rectangle(cartX - 3, cartY - 5, 8, 6, 0xf1b562, 0.22);
+    crateA.setStrokeStyle(1, 0xf1b562, 0.4);
+    crateA.setDepth(8.9);
+    const crateB = this.add.rectangle(cartX + 6, cartY - 5, 8, 6, 0x73d4ff, 0.18);
+    crateB.setStrokeStyle(1, 0x73d4ff, 0.34);
+    crateB.setDepth(8.92);
+    const wheelLeft = this.add.circle(cartX - 6, cartY + 7, 2, 0x141a22, 0.92);
+    wheelLeft.setDepth(8.84);
+    const wheelRight = this.add.circle(cartX + 6, cartY + 7, 2, 0x141a22, 0.92);
+    wheelRight.setDepth(8.84);
+    this.roomObjects.push(
+      shadow,
+      cartBody,
+      handle,
+      crateA,
+      crateB,
+      wheelLeft,
+      wheelRight,
+    );
   }
 
   private getCluePalette(style: ClueDefinition["style"]): {
@@ -3150,6 +4578,16 @@ export class GameScene extends Phaser.Scene {
       this.wallColliders.push(collider);
     }
 
+    for (const rect of this.getPassiveDoorRects(snapshot.room)) {
+      this.createPassiveDoorway(rect);
+    }
+
+    for (const fixture of snapshot.room.fixtures ?? []) {
+      this.createRoomFixture(fixture);
+      this.createFixtureCollider(fixture);
+      this.createFixtureOccluder(fixture);
+    }
+
     for (const door of snapshot.room.doors) {
       const shape = this.createDoorBlock(door.rect);
       this.physics.add.existing(shape, true);
@@ -3192,13 +4630,12 @@ export class GameScene extends Phaser.Scene {
       this.roomObjects.push(title);
 
       for (const slot of terminal.slots) {
-        const accent =
-          slot.id === "fault-slot" ? 0xef5d63 : slot.id === "service-tray" ? 0xf1b562 : 0x63d8ff;
+        const accent = this.getSlotAccent(slot.id);
         const slotShape = this.createSlotBlock(slot.rect, accent);
         const label = this.add.text(slot.rect.x - 4, slot.rect.y + slot.rect.height + 4, slot.label, {
           fontFamily: "Avenir Next, PingFang SC, Noto Sans SC, sans-serif",
           fontSize: "8px",
-          color: "#9fb1c2",
+          color: this.canPlaceItemInSlot(snapshot.room, slot, "battery") ? "#9fb1c2" : "#7d8a96",
           resolution: CAMERA_ZOOM,
         });
         label.setDepth(8);
@@ -3238,7 +4675,12 @@ export class GameScene extends Phaser.Scene {
       this.createClue(clueDef);
     }
 
+    for (const staff of snapshot.room.staff ?? []) {
+      this.createStaffStation(staff);
+    }
+
     for (const item of snapshot.room.items) {
+      this.createItemStagingPad(item.position);
       const shadow = this.add.ellipse(item.position.x, item.position.y + 5, 14, 6, 0x05070b, 0.35);
       shadow.setDepth(11);
       const sprite = this.add.image(item.position.x, item.position.y, "battery-chip");
@@ -3467,6 +4909,7 @@ export class GameScene extends Phaser.Scene {
     this.staffObjects.clear();
     this.signalZoneObjects.clear();
     this.waitingZoneObjects.clear();
+    this.foregroundOccluders = [];
     for (const object of this.roomObjects) {
       object.destroy();
     }
@@ -3861,7 +5304,9 @@ export class GameScene extends Phaser.Scene {
       const carriedItemId = this.carriedItemId;
       const nearestSlot = Array.from(this.slotObjects.values())
         .filter(
-          (entry) => !this.isSlotOccupiedByOtherItem(entry.slot.id, carriedItemId),
+          (entry) =>
+            this.canPlaceItemInSlot(snapshot.room, entry.slot, "battery") &&
+            !this.isSlotOccupiedByOtherItem(entry.slot.id, carriedItemId),
         )
         .map((entry) => ({
           slot: entry.slot,
@@ -3904,9 +5349,6 @@ export class GameScene extends Phaser.Scene {
       .sort((a, b) => a.distance - b.distance)[0];
 
     if (nearestClue) {
-      if (nearestClue.clue.def.unlocksGuideInsight) {
-        this.guideInsightUnlocked = true;
-      }
       this.activeClueId = nearestClue.clue.def.id;
       this.ui.showClue(
         nearestClue.clue.def.title,
@@ -4242,74 +5684,69 @@ export class GameScene extends Phaser.Scene {
 
   private syncGuidePaths(activePathId: string | null): void {
     this.guideGraphics.clear();
-    if (!this.guideInsightUnlocked) {
+    if (!activePathId) {
       return;
     }
-    const pulse = (Math.sin(this.time.now / 260) + 1) * 0.5;
 
-    for (const path of this.currentRoom.guidePaths) {
-      if (path.points.length < 2) {
+    const activePath = this.currentRoom.guidePaths.find(
+      (path) => path.id === activePathId,
+    );
+    if (!activePath || activePath.points.length < 2) {
+      return;
+    }
+
+    const pulse = (Math.sin(this.time.now / 220) + 1) * 0.5;
+    const color = activePath.color === "amber" ? 0xf0c96f : 0x7fe4ff;
+
+    this.guideGraphics.lineStyle(6, 0x061019, 0.1 + pulse * 0.03);
+    this.guideGraphics.beginPath();
+    this.guideGraphics.moveTo(activePath.points[0].x, activePath.points[0].y);
+    for (let index = 1; index < activePath.points.length; index += 1) {
+      const point = activePath.points[index];
+      this.guideGraphics.lineTo(point.x, point.y);
+    }
+    this.guideGraphics.strokePath();
+
+    this.guideGraphics.lineStyle(2.25, color, 0.26 + pulse * 0.16);
+    this.guideGraphics.beginPath();
+    this.guideGraphics.moveTo(activePath.points[0].x, activePath.points[0].y);
+    for (let index = 1; index < activePath.points.length; index += 1) {
+      const point = activePath.points[index];
+      this.guideGraphics.lineTo(point.x, point.y);
+    }
+    this.guideGraphics.strokePath();
+
+    for (let index = 0; index < activePath.points.length; index += 1) {
+      const point = activePath.points[index];
+      this.guideGraphics.fillStyle(0x061019, 0.24);
+      this.guideGraphics.fillCircle(point.x, point.y, 5);
+      this.guideGraphics.fillStyle(color, 0.18 + pulse * 0.08);
+      this.guideGraphics.fillCircle(point.x, point.y, 3);
+      this.guideGraphics.fillStyle(0xffffff, 0.18 + pulse * 0.08);
+      this.guideGraphics.fillCircle(point.x, point.y, 1);
+    }
+
+    for (let index = 1; index < activePath.points.length; index += 1) {
+      const from = activePath.points[index - 1];
+      const to = activePath.points[index];
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.hypot(dx, dy);
+      if (length <= 0.001) {
         continue;
       }
 
-      const isActive = path.id === activePathId;
-      const color =
-        path.color === "amber"
-          ? 0xc9a05b
-          : 0x7aa8bd;
+      const nx = dx / length;
+      const ny = dy / length;
+      const spacing = 18;
+      const travelOffset = (this.time.now / 26) % spacing;
 
-      for (let index = 0; index < path.points.length; index += 1) {
-        const point = path.points[index];
-        this.guideGraphics.fillStyle(0x05080c, isActive ? 0.18 : 0.1);
-        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 7 : 5);
-        this.guideGraphics.fillStyle(color, isActive ? 0.16 + pulse * 0.08 : 0.07);
-        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 4.5 : 3);
-        this.guideGraphics.fillStyle(0xffffff, isActive ? 0.22 + pulse * 0.08 : 0.08);
-        this.guideGraphics.fillCircle(point.x, point.y, isActive ? 1.4 : 1);
-      }
-
-      for (let index = 1; index < path.points.length; index += 1) {
-        const from = path.points[index - 1];
-        const to = path.points[index];
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const length = Math.hypot(dx, dy);
-        if (length <= 0.001) {
-          continue;
-        }
-
-        const nx = dx / length;
-        const ny = dy / length;
-        const spacing = 18;
-        const dashHalfLength = isActive ? 4.5 : 3.5;
-        const travelOffset = isActive ? (this.time.now / 22) % spacing : 0;
-
-        for (let dist = 10; dist < length - 6; dist += spacing) {
-          const shifted = isActive ? (dist + travelOffset) % length : dist;
-          const x = from.x + nx * shifted;
-          const y = from.y + ny * shifted;
-
-          this.guideGraphics.lineStyle(6, 0x061019, isActive ? 0.1 : 0.05);
-          this.guideGraphics.beginPath();
-          this.guideGraphics.moveTo(x - nx * (dashHalfLength + 1), y - ny * (dashHalfLength + 1));
-          this.guideGraphics.lineTo(x + nx * (dashHalfLength + 1), y + ny * (dashHalfLength + 1));
-          this.guideGraphics.strokePath();
-
-          this.guideGraphics.lineStyle(
-            isActive ? 2.5 : 2,
-            color,
-            isActive ? 0.28 + pulse * 0.18 : 0.12,
-          );
-          this.guideGraphics.beginPath();
-          this.guideGraphics.moveTo(x - nx * dashHalfLength, y - ny * dashHalfLength);
-          this.guideGraphics.lineTo(x + nx * dashHalfLength, y + ny * dashHalfLength);
-          this.guideGraphics.strokePath();
-
-          if (isActive) {
-            this.guideGraphics.fillStyle(color, 0.05 + pulse * 0.04);
-            this.guideGraphics.fillCircle(x, y, 3.5);
-          }
-        }
+      for (let dist = 10; dist < length - 6; dist += spacing) {
+        const shifted = Math.min(length - 4, dist + travelOffset);
+        const x = from.x + nx * shifted;
+        const y = from.y + ny * shifted;
+        this.guideGraphics.fillStyle(color, 0.08 + pulse * 0.05);
+        this.guideGraphics.fillCircle(x, y, 2.6);
       }
     }
   }
@@ -5158,13 +6595,13 @@ export class GameScene extends Phaser.Scene {
     for (const zone of this.waitingZoneObjects.values()) {
       const isActive = zone.zone.id === activeZoneId;
       zone.shape.setFillStyle(
-        receptionConfirmed ? 0x1e5540 : 0x1a3f4f,
-        receptionConfirmed ? 0.24 : isActive ? 0.22 : 0.16,
+        receptionConfirmed ? 0x1e5540 : 0x173543,
+        receptionConfirmed ? 0.18 : isActive ? 0.14 : 0.1,
       );
       zone.shape.setStrokeStyle(
-        1.5,
+        1.25,
         receptionConfirmed ? 0x7df2bc : 0x6ecbe8,
-        receptionConfirmed ? 0.9 : isActive ? 0.82 : 0.6,
+        receptionConfirmed ? 0.84 : isActive ? 0.64 : 0.36,
       );
       zone.label.setColor(
         receptionConfirmed ? "#c8ffe0" : isActive ? "#d2f3ff" : "#90c4d8",
@@ -5176,6 +6613,22 @@ export class GameScene extends Phaser.Scene {
             ? `${zone.zone.label}\n正在读取`
             : `${zone.zone.label}\n等待确认`,
       );
+    }
+  }
+
+  private syncForegroundOccluders(): void {
+    const footX = this.player.x;
+    const footY = this.player.y + 8;
+
+    for (const occluder of this.foregroundOccluders) {
+      const withinX =
+        footX >= occluder.rect.x - occluder.marginX &&
+        footX <= occluder.rect.x + occluder.rect.width + occluder.marginX;
+      const withinY =
+        footY >= occluder.activationTop &&
+        footY <= occluder.activationBottom;
+
+      occluder.object.visible = withinX && withinY;
     }
   }
 

@@ -53,6 +53,30 @@ export interface WaitingZone {
   label: string;
 }
 
+export type RoomFixtureKind =
+  | "counter"
+  | "benchRow"
+  | "storageRack"
+  | "workbench"
+  | "fileShelf"
+  | "divider"
+  | "deskPod"
+  | "planter";
+
+export type RoomFixtureTone =
+  | "neutral"
+  | "entry"
+  | "service"
+  | "archive"
+  | "office";
+
+export interface RoomFixtureDefinition {
+  id: string;
+  kind: RoomFixtureKind;
+  rect: Rect;
+  tone?: RoomFixtureTone;
+}
+
 export type ClueStyle = "clipboard" | "sticker" | "ledger";
 
 export interface ClueDefinition {
@@ -122,6 +146,7 @@ export interface ItemSlot {
   id: string;
   rect: Rect;
   label: string;
+  acceptsItemType?: ItemSpawn["itemType"];
 }
 
 export interface TerminalRecipe {
@@ -207,6 +232,7 @@ export interface RoomDefinition {
   terminal?: TerminalDefinition;
   consoles?: ConsoleDefinition[];
   clues?: ClueDefinition[];
+  fixtures?: RoomFixtureDefinition[];
   signalRequiresActivation?: boolean;
   items: ItemSpawn[];
   signalZones: SignalZone[];

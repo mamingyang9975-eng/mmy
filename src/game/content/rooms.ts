@@ -60,6 +60,20 @@ export const ROOMS: RoomDefinition[] = [
         action: "registerVisitor",
       },
     ],
+    fixtures: [
+      {
+        id: "entry-bench-a",
+        kind: "benchRow",
+        rect: { x: 34, y: 46, width: 60, height: 14 },
+        tone: "entry",
+      },
+      {
+        id: "entry-counter-a",
+        kind: "counter",
+        rect: { x: 72, y: 122, width: 68, height: 14 },
+        tone: "entry",
+      },
+    ],
     items: [],
     signalZones: [
       {
@@ -160,6 +174,26 @@ export const ROOMS: RoomDefinition[] = [
         style: "clipboard",
       },
     ],
+    fixtures: [
+      {
+        id: "reception-casework",
+        kind: "counter",
+        rect: { x: 54, y: 54, width: 72, height: 16 },
+        tone: "entry",
+      },
+      {
+        id: "reception-divider",
+        kind: "divider",
+        rect: { x: 136, y: 64, width: 54, height: 10 },
+        tone: "entry",
+      },
+      {
+        id: "reception-planter",
+        kind: "planter",
+        rect: { x: 192, y: 176, width: 26, height: 10 },
+        tone: "entry",
+      },
+    ],
     signalZones: [],
     waitingZones: [
       {
@@ -193,16 +227,20 @@ export const ROOMS: RoomDefinition[] = [
       "主电源槽已锁定，请将服务部件放入侧边托盘。",
       "服务确认来自门侧住户。",
     ],
+    dimensions: {
+      width: 448,
+      height: 216,
+    },
     playerSpawn: { x: 42, y: 174 },
     wallRects: [
-      { x: 214, y: 0, width: 22, height: 86 },
-      { x: 214, y: 124, width: 22, height: 92 },
+      { x: 248, y: 0, width: 22, height: 86 },
+      { x: 248, y: 124, width: 22, height: 92 },
     ],
     drones: [
       {
         id: "scanner-b",
         label: "扫描机",
-        position: { x: 140, y: 106 },
+        position: { x: 176, y: 106 },
         rule: {
           id: "scanner-b",
           kind: "scanner",
@@ -220,8 +258,8 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "resident-b",
         label: "住户",
-        position: { x: 168, y: 168 },
-        servicePoint: { x: 188, y: 150 },
+        position: { x: 208, y: 168 },
+        servicePoint: { x: 226, y: 150 },
         speed: 22,
       },
     ],
@@ -230,9 +268,9 @@ export const ROOMS: RoomDefinition[] = [
         id: "porter-b",
         label: "后勤",
         role: "porter",
-        position: { x: 76, y: 176 },
-        deskPoint: { x: 76, y: 176 },
-        terminalPoint: { x: 76, y: 176 },
+        position: { x: 92, y: 176 },
+        deskPoint: { x: 92, y: 176 },
+        terminalPoint: { x: 92, y: 176 },
         speed: 24,
         idleMs: 0,
         checkMs: 0,
@@ -240,11 +278,11 @@ export const ROOMS: RoomDefinition[] = [
         pauseMs: 1100,
         influenceRadius: 28,
         routePoints: [
-          { x: 76, y: 176 },
-          { x: 58, y: 112 },
-          { x: 116, y: 112 },
-          { x: 176, y: 134 },
-          { x: 120, y: 168 },
+          { x: 92, y: 176 },
+          { x: 66, y: 112 },
+          { x: 138, y: 112 },
+          { x: 220, y: 134 },
+          { x: 154, y: 168 },
         ],
       },
     ],
@@ -252,7 +290,7 @@ export const ROOMS: RoomDefinition[] = [
       {
         id: "service-door",
         label: "服务门",
-        rect: { x: 214, y: 86, width: 22, height: 38 },
+        rect: { x: 248, y: 86, width: 22, height: 38 },
         rule: {
           id: "service-door",
           accepts: ["maintenanceCandidate"],
@@ -278,22 +316,23 @@ export const ROOMS: RoomDefinition[] = [
     terminal: {
       id: "terminal-b",
       label: "服务终端",
-      body: { x: 32, y: 44, width: 90, height: 86 },
+      body: { x: 28, y: 42, width: 132, height: 86 },
       slots: [
         {
           id: "power-slot",
           label: "主电源",
-          rect: { x: 66, y: 58, width: 18, height: 18 },
+          rect: { x: 40, y: 98, width: 20, height: 18 },
+          acceptsItemType: "battery",
         },
         {
           id: "service-tray",
           label: "服务托盘",
-          rect: { x: 40, y: 102, width: 18, height: 18 },
+          rect: { x: 84, y: 98, width: 20, height: 18 },
         },
         {
           id: "fault-slot",
           label: "故障槽",
-          rect: { x: 94, y: 102, width: 18, height: 18 },
+          rect: { x: 128, y: 98, width: 20, height: 18 },
         },
       ],
       recipes: [
@@ -314,19 +353,19 @@ export const ROOMS: RoomDefinition[] = [
         id: "battery-a",
         itemType: "battery",
         label: "电池 A",
-        position: { x: 72, y: 164 },
+        position: { x: 76, y: 162 },
       },
       {
         id: "battery-b",
         itemType: "battery",
         label: "电池 B",
-        position: { x: 104, y: 186 },
+        position: { x: 118, y: 182 },
       },
     ],
     clues: [
       {
         id: "porter-slip",
-        rect: { x: 142, y: 182, width: 18, height: 12 },
+        rect: { x: 178, y: 182, width: 18, height: 12 },
         label: "后勤交接单",
         title: "后勤口临时交接单",
         body: [
@@ -334,6 +373,26 @@ export const ROOMS: RoomDefinition[] = [
           "服务门只在门边确认到住户响应后，才继续放行。",
         ],
         style: "sticker",
+      },
+    ],
+    fixtures: [
+      {
+        id: "service-rack-a",
+        kind: "storageRack",
+        rect: { x: 32, y: 24, width: 88, height: 14 },
+        tone: "service",
+      },
+      {
+        id: "service-bench-a",
+        kind: "workbench",
+        rect: { x: 172, y: 34, width: 48, height: 14 },
+        tone: "service",
+      },
+      {
+        id: "service-counter-a",
+        kind: "counter",
+        rect: { x: 182, y: 180, width: 46, height: 14 },
+        tone: "service",
       },
     ],
     signalZones: [],
@@ -432,6 +491,7 @@ export const ROOMS: RoomDefinition[] = [
           id: "inspection-pad",
           label: "检修台",
           rect: { x: 314, y: 168, width: 20, height: 20 },
+          acceptsItemType: "battery",
         },
       ],
       recipes: [
@@ -454,6 +514,20 @@ export const ROOMS: RoomDefinition[] = [
         itemType: "battery",
         label: "备用电池",
         position: { x: 110, y: 182 },
+      },
+    ],
+    fixtures: [
+      {
+        id: "maintenance-rack-c",
+        kind: "storageRack",
+        rect: { x: 314, y: 34, width: 74, height: 16 },
+        tone: "service",
+      },
+      {
+        id: "maintenance-bench-c",
+        kind: "workbench",
+        rect: { x: 314, y: 176, width: 72, height: 14 },
+        tone: "service",
       },
     ],
     signalZones: [],
@@ -621,6 +695,32 @@ export const ROOMS: RoomDefinition[] = [
         position: { x: 78, y: 164 },
       },
     ],
+    fixtures: [
+      {
+        id: "archive-shelf-top",
+        kind: "fileShelf",
+        rect: { x: 448, y: 34, width: 72, height: 16 },
+        tone: "archive",
+      },
+      {
+        id: "archive-review-desk",
+        kind: "deskPod",
+        rect: { x: 386, y: 34, width: 42, height: 16 },
+        tone: "archive",
+      },
+      {
+        id: "archive-shelf-bottom",
+        kind: "fileShelf",
+        rect: { x: 438, y: 178, width: 84, height: 12 },
+        tone: "archive",
+      },
+      {
+        id: "archive-divider",
+        kind: "divider",
+        rect: { x: 456, y: 136, width: 58, height: 10 },
+        tone: "archive",
+      },
+    ],
     signalZones: [
       {
         id: "archive-signal",
@@ -683,16 +783,16 @@ export const ROOMS: RoomDefinition[] = [
       { x: 176, y: 126, width: 22, height: 90 },
       { x: 622, y: 0, width: 22, height: 82 },
       { x: 622, y: 126, width: 22, height: 90 },
-      { x: 286, y: 40, width: 66, height: 16 },
-      { x: 286, y: 160, width: 66, height: 16 },
-      { x: 448, y: 54, width: 54, height: 14 },
-      { x: 448, y: 148, width: 54, height: 14 },
+      { x: 280, y: 38, width: 84, height: 18 },
+      { x: 280, y: 160, width: 84, height: 18 },
+      { x: 474, y: 46, width: 72, height: 16 },
+      { x: 454, y: 146, width: 60, height: 14 },
     ],
     drones: [
       {
         id: "scanner-e",
         label: "扫描机",
-        position: { x: 372, y: 104 },
+        position: { x: 404, y: 104 },
         rule: {
           id: "scanner-e",
           kind: "scanner",
@@ -711,9 +811,9 @@ export const ROOMS: RoomDefinition[] = [
         id: "clerk-e",
         label: "夜班文员",
         role: "clerk",
-        position: { x: 494, y: 160 },
-        deskPoint: { x: 494, y: 160 },
-        terminalPoint: { x: 494, y: 160 },
+        position: { x: 532, y: 158 },
+        deskPoint: { x: 532, y: 158 },
+        terminalPoint: { x: 532, y: 158 },
         speed: 26,
         idleMs: 0,
         checkMs: 0,
@@ -721,11 +821,11 @@ export const ROOMS: RoomDefinition[] = [
         pauseMs: 1400,
         influenceRadius: 34,
         routePoints: [
-          { x: 494, y: 160 },
-          { x: 540, y: 152 },
-          { x: 564, y: 102 },
-          { x: 486, y: 54 },
-          { x: 404, y: 104 },
+          { x: 532, y: 158 },
+          { x: 570, y: 152 },
+          { x: 592, y: 104 },
+          { x: 536, y: 56 },
+          { x: 430, y: 104 },
         ],
       },
     ],
@@ -747,7 +847,7 @@ export const ROOMS: RoomDefinition[] = [
     clues: [
       {
         id: "handover-ledger",
-        rect: { x: 500, y: 176, width: 20, height: 12 },
+        rect: { x: 580, y: 176, width: 20, height: 12 },
         label: "值班交接簿",
         title: "夜班交接簿",
         body: [
@@ -758,7 +858,7 @@ export const ROOMS: RoomDefinition[] = [
       },
       {
         id: "patrol-design-log",
-        rect: { x: 454, y: 42, width: 20, height: 12 },
+        rect: { x: 498, y: 40, width: 20, height: 12 },
         label: "巡逻设计日志",
         title: "巡逻识别 / 设计日志",
         body: [
@@ -770,12 +870,38 @@ export const ROOMS: RoomDefinition[] = [
         unlocksGuideInsight: true,
       },
     ],
+    fixtures: [
+      {
+        id: "handover-cabinet-top",
+        kind: "fileShelf",
+        rect: { x: 214, y: 26, width: 64, height: 18 },
+        tone: "office",
+      },
+      {
+        id: "handover-cabinet-bottom",
+        kind: "fileShelf",
+        rect: { x: 214, y: 172, width: 64, height: 16 },
+        tone: "office",
+      },
+      {
+        id: "handover-spare-desk",
+        kind: "deskPod",
+        rect: { x: 522, y: 32, width: 56, height: 18 },
+        tone: "office",
+      },
+      {
+        id: "handover-divider",
+        kind: "divider",
+        rect: { x: 514, y: 134, width: 72, height: 10 },
+        tone: "office",
+      },
+    ],
     signalZones: [],
     waitingZones: [
       {
         id: "handover-zone",
         label: "交接区",
-        rect: { x: 526, y: 144, width: 48, height: 28 },
+        rect: { x: 520, y: 144, width: 56, height: 26 },
       },
     ],
     guidePaths: [
@@ -785,9 +911,9 @@ export const ROOMS: RoomDefinition[] = [
         activeWhen: "guided",
         tolerance: 14,
         points: [
-          { x: 538, y: 158 },
-          { x: 566, y: 152 },
-          { x: 596, y: 138 },
+          { x: 548, y: 156 },
+          { x: 574, y: 150 },
+          { x: 600, y: 136 },
           { x: 614, y: 114 },
           { x: 618, y: 104 },
         ],
@@ -850,6 +976,26 @@ export const ROOMS: RoomDefinition[] = [
         label: "签出台",
         prompt: "按 E 发起领出",
         action: "releaseSubject",
+      },
+    ],
+    fixtures: [
+      {
+        id: "signout-bench",
+        kind: "benchRow",
+        rect: { x: 36, y: 46, width: 70, height: 16 },
+        tone: "office",
+      },
+      {
+        id: "signout-counter",
+        kind: "counter",
+        rect: { x: 66, y: 128, width: 66, height: 12 },
+        tone: "office",
+      },
+      {
+        id: "signout-record-shelf",
+        kind: "fileShelf",
+        rect: { x: 420, y: 36, width: 52, height: 16 },
+        tone: "office",
       },
     ],
     items: [],

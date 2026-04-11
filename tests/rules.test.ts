@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ROOMS } from "../src/game/content/rooms";
 import {
   advanceInterpretation,
+  canTerminalSlotAcceptItem,
   canDoorOpen,
   createGuideMemory,
   createInterpretationScores,
@@ -350,6 +351,45 @@ describe("door and terminal rules", () => {
       "faultReport",
     );
     expect(resolveTerminalMode(recipes, "power-slot", "battery")).toBe("none");
+  });
+
+  it("allows the room two power slot to hold a battery without changing the terminal mode", () => {
+    const room = roomById("room-2");
+    const powerSlot = room.terminal?.slots.find((slot) => slot.id === "power-slot");
+
+    expect(powerSlot).toBeDefined();
+    expect(
+      canTerminalSlotAcceptItem(powerSlot!, room.terminal?.recipes ?? [], "battery"),
+    ).toBe(true);
+    expect(resolveTerminalMode(room.terminal?.recipes ?? [], "power-slot", "battery")).toBe(
+      "none",
+    );
+  });
+
+  it("keeps the inspection pad battery-only behavior scoped to room three", () => {
+    const roomThreePad = roomById("room-3").terminal?.slots.find(
+      (slot) => slot.id === "inspection-pad",
+    );
+    const roomFourPad = roomById("room-4").terminal?.slots.find(
+      (slot) => slot.id === "inspection-pad",
+    );
+
+    expect(roomThreePad).toBeDefined();
+    expect(roomFourPad).toBeDefined();
+    expect(
+      canTerminalSlotAcceptItem(
+        roomThreePad!,
+        roomById("room-3").terminal?.recipes ?? [],
+        "battery",
+      ),
+    ).toBe(true);
+    expect(
+      canTerminalSlotAcceptItem(
+        roomFourPad!,
+        roomById("room-4").terminal?.recipes ?? [],
+        "battery",
+      ),
+    ).toBe(false);
   });
 
   it("expands room three and room four to give escort logic more space", () => {

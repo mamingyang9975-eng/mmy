@@ -8,6 +8,7 @@ import type {
   InterpretationResult,
   InterpretationScores,
   InterpretationTag,
+  ItemSlot,
   ItemSpawn,
   PlayerIntentSnapshot,
   TerminalMode,
@@ -307,6 +308,19 @@ export function canDoorOpen(rule: DoorRule, context: DoorContext): boolean {
   }
 
   return true;
+}
+
+export function canTerminalSlotAcceptItem(
+  slot: ItemSlot,
+  recipes: TerminalRecipe[],
+  itemType: ItemSpawn["itemType"],
+): boolean {
+  return (
+    slot.acceptsItemType === itemType ||
+    recipes.some(
+      (entry) => entry.slotId === slot.id && entry.acceptsItemType === itemType,
+    )
+  );
 }
 
 export function resolveTerminalMode(
